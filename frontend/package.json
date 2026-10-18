@@ -1,0 +1,42 @@
+{
+  "name": "health-sync-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 3000 --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "lint:js": "eslint . --max-warnings 0",
+    "lint:css": "stylelint \"src/**/*.css\" --max-warnings 0",
+    "lint": "npm run lint:js && npm run lint:css",
+    "test:ui": "playwright test",
+    "test:ui:update": "playwright test --update-snapshots"
+  },
+  "dependencies": {
+    "@nivo/bar": "0.99.0",
+    "@nivo/core": "0.99.0",
+    "@nivo/line": "0.99.0",
+    "react": "19.2.4",
+    "react-aria-components": "1.21.1",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "9.22.0",
+    "@fontsource/ibm-plex-mono": "5.2.5",
+    "@fontsource/ibm-plex-sans": "5.2.5",
+    "@material-symbols/font-400": "0.31.0",
+    "@playwright/test": "1.52.0",
+    "@types/node": "22.13.10",
+    "@types/react": "19.0.10",
+    "@types/react-dom": "19.0.4",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint": "9.22.0",
+    "eslint-plugin-react-hooks": "5.2.0",
+    "globals": "16.0.0",
+    "stylelint": "16.16.0",
+    "typescript": "5.8.2",
+    "typescript-eslint": "8.26.1",
+    "vite": "6.2.2"
+  }
+}

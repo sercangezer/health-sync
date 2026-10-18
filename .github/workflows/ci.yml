@@ -1,0 +1,31 @@
+name: HealthSync Self-Hosted CI
+
+on:
+  push:
+    branches: [master, main, "feat/**", "fix/**", "gelistirme/**"]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  verify:
+    name: Full-Stack Verification Gate (make check)
+    runs-on: [self-hosted, linux, x64]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run Lint Gate (make lint)
+        run: make lint
+
+      - name: Run OpenAPI Contract Parity Gate (make contract-check)
+        run: make contract-check
+
+      - name: Run UI Offline, Contrast, Axe & Visual Gate (make ui-check)
+        run: make ui-check
+
+      - name: Run Microservices Test Suite (make test)
+        run: make test

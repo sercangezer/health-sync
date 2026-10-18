@@ -1,0 +1,730 @@
+openapi: 3.1.0
+info:
+  title: HealthSync Multi-Device Telemetry & Intelligence API
+  version: 1.0.0
+  description: >-
+    Samsung Galaxy Watch6, Garmin Smart Band ve Renpho ES-26BB-B tartı verilerini
+    toplayan, birleştiren, karşılaştıran ve anlamlandıran mikroservis ağ geçidi sözleşmesi.
+paths:
+  /api/health:
+    get:
+      operationId: getHealth
+      summary: Sistem ve bağlı tüm mikroservislerin sağlık ve devre kesici durumunu döndürür
+      tags:
+        - System
+      responses:
+        '200':
+          description: Sistem sağlık durumu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemHealthResponse'
+  /api/changelog:
+    get:
+      operationId: getChangelog
+      summary: Uygulama sürümü, commit kimliği ve değişiklik günlüğünü (CHANGELOG.md) döndürür
+      tags:
+        - System
+      responses:
+        '200':
+          description: Sürüm ve değişiklik günlüğü
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChangelogResponse'
+  /api/sync/status:
+    get:
+      operationId: getSyncStatus
+      summary: Renpho, Garmin ve Galaxy Watch6 mikroservislerinin senkronizasyon durumlarını ve geçmişini döndürür
+      tags:
+        - Sync
+      responses:
+        '200':
+          description: Senkronizasyon durumu ve geçmişi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncStatusResponse'
+  /api/sync/trigger:
+    post:
+      operationId: triggerSync
+      summary: Seçili cihaz mikroservislerinde veya tümünde anlık senkronizasyon ve anlamlandırma boru hattını tetikler
+      tags:
+        - Sync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncTriggerRequest'
+      responses:
+        '200':
+          description: Senkronizasyon sonucu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncTriggerResponse'
+  /api/ingest/webhook:
+    post:
+      operationId: ingestWebhook
+      summary: Samsung Galaxy Watch6 (Health Connect Webhook) ve çoklu cihaz JSON verilerini otomatik kabul eder
+      tags:
+        - Ingest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookIngestRequest'
+      responses:
+        '200':
+          description: Webhook veri alımı başarılı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+  /api/ingest/ble-scale:
+    post:
+      operationId: ingestBleScale
+      summary: Tarayıcı Web Bluetooth API üzerinden okunan canlı Renpho ES-26BB-B tartı ölçümünü kaydeder
+      tags:
+        - Ingest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BleScaleIngestRequest'
+      responses:
+        '200':
+          description: BLE tartı ölçümü kaydedildi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+  /api/ingest/import-file:
+    post:
+      operationId: importHealthFile
+      summary: Health Connect SQLite (.db) veya CSV yedeğini içe aktarır
+      tags:
+        - Ingest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FileImportRequest'
+      responses:
+        '200':
+          description: Dosya içe aktarımı tamamlandı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestResponse'
+  /api/reconciliation/rules:
+    get:
+      operationId: getReconciliationRules
+      summary: Metrik bazlı cihaz öncelik kurallarını ve aktif takip döngüsü penceresini döndürür
+      tags:
+        - Reconciliation
+      responses:
+        '200':
+          description: Birleştirme ve döngü kuralları
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationConfigResponse'
+    put:
+      operationId: updateReconciliationRules
+      summary: Metrik bazlı cihaz öncelik kurallarını ve aktif takip döngüsü başlangıç penceresini günceller
+      tags:
+        - Reconciliation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReconciliationConfigUpdate'
+      responses:
+        '200':
+          description: Güncellenmiş birleştirme kuralları
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationConfigResponse'
+  /api/dashboard/overview:
+    get:
+      operationId: getDashboardOverview
+      summary: Zaman aralığı ve kapsam filtreli birleşik gösterge paneli özetini, metrik şeridini ve Nivo grafik serilerini döndürür
+      tags:
+        - Dashboard
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            default: 30d
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            default: all
+      responses:
+        '200':
+          description: Gösterge paneli verisi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardOverviewResponse'
+  /api/measurements/scale:
+    get:
+      operationId: listScaleMeasurements
+      summary: Renpho ES-26BB-B 13 metrikli tartı ölçümlerini listeler
+      tags:
+        - Scale
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 60
+      responses:
+        '200':
+          description: Tartı ölçümleri listesi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScaleMeasurementListResponse'
+  /api/measurements/scale/bulk-delete:
+    post:
+      operationId: bulkDeleteScaleMeasurements
+      summary: Seçili tartı ölçümlerini toplu olarak siler
+      tags:
+        - Scale
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkDeleteRequest'
+      responses:
+        '200':
+          description: Silme sonucu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkDeleteResponse'
+  /api/wearables/comparison:
+    get:
+      operationId: getWearablesComparison
+      summary: Samsung Galaxy Watch6 ve Garmin Smart Band yan yana günlük metrik kıyaslamasını ve uyum analizini döndürür
+      tags:
+        - Wearables
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: Cihaz karşılaştırma verisi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WearablesComparisonResponse'
+  /api/analytics/insights:
+    get:
+      operationId: getAnalyticsInsights
+      summary: Toparlanma Skoru, Kilo Değişim Kalitesi, Pearson korelasyonları ve anomali uyarılarını döndürür
+      tags:
+        - Analytics
+      parameters:
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            default: 30d
+      responses:
+        '200':
+          description: Anlamlandırma ve korelasyon çıktısı
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsInsightsResponse'
+  /api/ai/prompts:
+    get:
+      operationId: getAiPrompts
+      summary: Güncel çoklu cihaz verileriyle doldurulmuş, tek tıkla kopyalanabilir AI analiz prompt metnini döndürür
+      tags:
+        - AI
+      responses:
+        '200':
+          description: Hazır AI prompt içeriği
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiPromptResponse'
+  /api/ai/analyze:
+    post:
+      operationId: createAiAnalysis
+      summary: Çoklu cihaz verilerini anlamlandıran yeni bir AI danışman raporu üretir
+      tags:
+        - AI
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AiAnalyzeRequest'
+      responses:
+        '200':
+          description: Üretilen AI raporu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiReportItem'
+  /api/ai/reports:
+    get:
+      operationId: listAiReports
+      summary: Geçmiş AI anlamlandırma raporlarını listeler
+      tags:
+        - AI
+      responses:
+        '200':
+          description: AI rapor listesi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiReportListResponse'
+components:
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required:
+        - error_code
+        - message
+        - details
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+        details:
+          type: string
+    ServiceNodeStatus:
+      type: object
+      required:
+        - name
+        - role
+        - status
+        - circuit_state
+        - latency_ms
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        status:
+          type: string
+        circuit_state:
+          type: string
+        latency_ms:
+          type: number
+        last_check:
+          type: string
+    SystemHealthResponse:
+      type: object
+      required:
+        - status
+        - version
+        - commit
+        - timestamp
+        - services
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+        commit:
+          type: string
+        timestamp:
+          type: string
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceNodeStatus'
+    ChangelogResponse:
+      type: object
+      required:
+        - version
+        - commit
+        - changelog
+      properties:
+        version:
+          type: string
+        commit:
+          type: string
+        changelog:
+          type: string
+    SyncStatusResponse:
+      type: object
+      required:
+        - auto_sync_interval_minutes
+        - providers
+        - recent_logs
+      properties:
+        auto_sync_interval_minutes:
+          type: integer
+        providers:
+          type: array
+          items:
+            type: object
+        recent_logs:
+          type: array
+          items:
+            type: object
+    SyncTriggerRequest:
+      type: object
+      required:
+        - provider
+      properties:
+        provider:
+          type: string
+    SyncTriggerResponse:
+      type: object
+      required:
+        - status
+        - provider
+        - records_processed
+        - message
+      properties:
+        status:
+          type: string
+        provider:
+          type: string
+        records_processed:
+          type: integer
+        message:
+          type: string
+    WebhookIngestRequest:
+      type: object
+      required:
+        - device_source
+        - records
+      properties:
+        device_source:
+          type: string
+        records:
+          type: array
+          items:
+            type: object
+    BleScaleIngestRequest:
+      type: object
+      required:
+        - weight_kg
+      properties:
+        timestamp:
+          type: string
+        weight_kg:
+          type: number
+        impedance_ohm:
+          type: number
+        body_fat_pct:
+          type: number
+        muscle_mass_kg:
+          type: number
+        water_pct:
+          type: number
+        visceral_fat:
+          type: number
+        bone_mass_kg:
+          type: number
+        bmr_kcal:
+          type: integer
+        protein_pct:
+          type: number
+        metabolic_age:
+          type: integer
+    FileImportRequest:
+      type: object
+      required:
+        - file_name
+        - format
+        - content_base64
+      properties:
+        file_name:
+          type: string
+        format:
+          type: string
+        device_source:
+          type: string
+        content_base64:
+          type: string
+    IngestResponse:
+      type: object
+      required:
+        - status
+        - ingested_count
+        - message
+      properties:
+        status:
+          type: string
+        ingested_count:
+          type: integer
+        message:
+          type: string
+    ReconciliationConfigResponse:
+      type: object
+      required:
+        - weight_priority
+        - sleep_priority
+        - activity_priority
+        - heart_priority
+        - merge_strategy
+        - cycle_start_date
+        - target_weight_kg
+        - height_cm
+      properties:
+        weight_priority:
+          type: array
+          items:
+            type: string
+        sleep_priority:
+          type: array
+          items:
+            type: string
+        activity_priority:
+          type: array
+          items:
+            type: string
+        heart_priority:
+          type: array
+          items:
+            type: string
+        merge_strategy:
+          type: string
+        cycle_start_date:
+          type: string
+        target_weight_kg:
+          type: number
+        height_cm:
+          type: number
+    ReconciliationConfigUpdate:
+      type: object
+      required:
+        - weight_priority
+        - sleep_priority
+        - activity_priority
+        - heart_priority
+        - merge_strategy
+        - cycle_start_date
+        - target_weight_kg
+        - height_cm
+      properties:
+        weight_priority:
+          type: array
+          items:
+            type: string
+        sleep_priority:
+          type: array
+          items:
+            type: string
+        activity_priority:
+          type: array
+          items:
+            type: string
+        heart_priority:
+          type: array
+          items:
+            type: string
+        merge_strategy:
+          type: string
+        cycle_start_date:
+          type: string
+        target_weight_kg:
+          type: number
+        height_cm:
+          type: number
+    DashboardOverviewResponse:
+      type: object
+      required:
+        - last_updated
+        - range
+        - scope
+        - window_status
+        - cycle_start_date
+        - metrics
+        - weight_series
+        - recovery_series
+        - daily_rows
+        - anomalies
+        - services
+      properties:
+        last_updated:
+          type: string
+        range:
+          type: string
+        scope:
+          type: string
+        window_status:
+          type: string
+        cycle_start_date:
+          type: string
+        metrics:
+          type: array
+          items:
+            type: object
+        weight_series:
+          type: array
+          items:
+            type: object
+        recovery_series:
+          type: array
+          items:
+            type: object
+        daily_rows:
+          type: array
+          items:
+            type: object
+        anomalies:
+          type: array
+          items:
+            type: object
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceNodeStatus'
+    ScaleMeasurementListResponse:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        total:
+          type: integer
+    BulkDeleteRequest:
+      type: object
+      required:
+        - ids
+      properties:
+        ids:
+          type: array
+          items:
+            type: integer
+    BulkDeleteResponse:
+      type: object
+      required:
+        - deleted_count
+        - message
+      properties:
+        deleted_count:
+          type: integer
+        message:
+          type: string
+    WearablesComparisonResponse:
+      type: object
+      required:
+        - agreement_score
+        - summary
+        - rows
+      properties:
+        agreement_score:
+          type: number
+        summary:
+          type: object
+        rows:
+          type: array
+          items:
+            type: object
+    AnalyticsInsightsResponse:
+      type: object
+      required:
+        - window_status
+        - recovery_score
+        - recovery_status
+        - composition_quality
+        - correlations
+        - anomalies
+        - rolling_series
+      properties:
+        window_status:
+          type: string
+        recovery_score:
+          type: number
+        recovery_status:
+          type: string
+        composition_quality:
+          type: object
+        correlations:
+          type: array
+          items:
+            type: object
+        anomalies:
+          type: array
+          items:
+            type: object
+        rolling_series:
+          type: array
+          items:
+            type: object
+    AiPromptResponse:
+      type: object
+      required:
+        - prompt_text
+        - generated_at
+        - data_days_count
+        - webhook_url_hint
+      properties:
+        prompt_text:
+          type: string
+        generated_at:
+          type: string
+        data_days_count:
+          type: integer
+        webhook_url_hint:
+          type: string
+    AiAnalyzeRequest:
+      type: object
+      required:
+        - focus_area
+      properties:
+        focus_area:
+          type: string
+    AiReportItem:
+      type: object
+      required:
+        - id
+        - created_at
+        - focus_area
+        - source_mode
+        - summary_markdown
+      properties:
+        id:
+          type: integer
+        created_at:
+          type: string
+        focus_area:
+          type: string
+        source_mode:
+          type: string
+        summary_markdown:
+          type: string
+    AiReportListResponse:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiReportItem'

@@ -1,0 +1,128 @@
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/assets/fonts/IBMPlexSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/assets/fonts/IBMPlexSans-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("/assets/fonts/IBMPlexMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Material Symbols Outlined";
+  src: url("/assets/fonts/MaterialSymbolsOutlined.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --radius-control: 2px;
+  --radius-container: 4px;
+  --font-size-sm: 12px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --control-height: 32px;
+  --table-row-height: 36px;
+  --icon-size: 20px;
+  --border-width: 1px;
+  --focus-width: 2px;
+  --sidebar-width: 224px;
+  --sidebar-collapsed-width: 56px;
+  --form-max-width: 640px;
+  --chart-height: 240px;
+}
+
+:root[data-theme="dark"] {
+  --color-bg-base: #121619;
+  --color-bg-surface: #181d22;
+  --color-bg-elevated: #20272e;
+  --color-border: #343f4b;
+  --color-text-main: #e8eef2;
+  --color-text-sub: #b8c4ce;
+  --color-text-muted: #93a2b0;
+  --color-brand: #4db6ac;
+  --color-accent-green: #57c478;
+  --color-accent-gold: #e0ad42;
+  --color-accent-red: #f27474;
+  --color-chart-1: #4db6ac;
+  --color-chart-2: #6897bb;
+  --color-chart-3: #8fbc8f;
+  --color-chart-4: #d4a359;
+  --color-chart-5: #c98ca7;
+  --color-chart-6: #9896c4;
+}
+
+:root[data-theme="light"] {
+  --color-bg-base: #f5f3ef;
+  --color-bg-surface: #edeae4;
+  --color-bg-elevated: #e3dfd7;
+  --color-border: #b8b2a8;
+  --color-text-main: #1d232a;
+  --color-text-sub: #343e49;
+  --color-text-muted: #4b5663;
+  --color-brand: #0e5a54;
+  --color-accent-green: #185e31;
+  --color-accent-gold: #6e4800;
+  --color-accent-red: #961e1e;
+  --color-chart-1: #0e5a54;
+  --color-chart-2: #26547c;
+  --color-chart-3: #2d6a4f;
+  --color-chart-4: #8a5a12;
+  --color-chart-5: #7a3e58;
+  --color-chart-6: #4a4878;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg-base);
+  color: var(--color-text-main);
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: var(--font-size-base);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+
+code,
+pre,
+.mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: var(--font-size-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0ms !important;
+  }
+}

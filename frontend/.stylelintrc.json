@@ -1,0 +1,69 @@
+{
+  "rules": {
+    "color-no-hex": true,
+    "color-named": "never",
+    "function-disallowed-list": [
+      "rgb",
+      "rgba",
+      "hsl",
+      "hsla",
+      "hwb",
+      "lab",
+      "lch",
+      "oklab",
+      "oklch",
+      "color",
+      "/gradient$/"
+    ],
+    "property-disallowed-list": [
+      "backdrop-filter",
+      "-webkit-backdrop-filter"
+    ],
+    "declaration-property-value-disallowed-list": {
+      "text-transform": [
+        "uppercase"
+      ],
+      "/^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/": [
+        "/(^|\\s)([5-9]|[1-9]\\d+)(\\.\\d+)?px/",
+        "/(^|\\s)\\d*\\.?\\d+(r?em|%|vw|vh)/"
+      ]
+    }
+  },
+  "overrides": [
+    {
+      "files": [
+        "src/styles/tokens.css"
+      ],
+      "rules": {
+        "color-no-hex": null
+      }
+    },
+    {
+      "files": [
+        "src/ui/**/*.css"
+      ],
+      "rules": {
+        "unit-disallowed-list": [
+          "px"
+        ],
+        "declaration-property-value-disallowed-list": {
+          "text-transform": [
+            "uppercase"
+          ],
+          "/^border(-(top|bottom|start|end)-(left|right|start|end))?-radius$/": [
+            "/^(?!var\\(--radius-(control|container)\\)$|50%$|0$).*/"
+          ],
+          "/^(animation|animation-name)$/": [
+            "/.*/"
+          ],
+          "font-size": [
+            "/^(?!var\\(--font-size-(sm|base|lg)\\)$|inherit$).*/"
+          ],
+          "font-weight": [
+            "/^(?!400$|600$|inherit$).*/"
+          ]
+        }
+      }
+    }
+  ]
+}
