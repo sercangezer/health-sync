@@ -4,7 +4,6 @@ import {
   Button,
   CodeBlock,
   DetailTemplate,
-  FormTemplate,
   Icon,
   Input,
   Panel,
@@ -213,6 +212,157 @@ export function SettingsScreen({
     >
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
 
+      <div className="hs-grid-2">
+        <Panel
+          title="1. Renpho ES-26BB-B Akıllı Tartı"
+          actions={
+            <Tag
+              tone={settings.has_renpho_password ? 'nominal' : 'neutral'}
+              label={settings.has_renpho_password ? 'Bulut Hesabı Bağlı' : 'BLE / Hesap Bekleniyor'}
+            />
+          }
+        >
+          <p className="hs-page-subtitle">
+            Renpho Health mobil uygulama hesabınızı girin. 13 vücut kompozisyonu metriği buluttan otomatik çekilir.
+          </p>
+          <Input
+            label="Renpho E-posta Adresi"
+            value={formState.renpho_email}
+            placeholder="ornek@eposta.com"
+            onChange={(val) => setFormState({ ...formState, renpho_email: val })}
+            testId="input-renpho-email"
+          />
+          <Input
+            label={`Renpho Parolası (Durum: ${settings.renpho_password_masked})`}
+            type="password"
+            value={formState.renpho_password}
+            placeholder="Yeni parola girin veya korumak için boş bırakın"
+            onChange={(val) => setFormState({ ...formState, renpho_password: val })}
+            testId="input-renpho-password"
+          />
+          <div className="hs-filter-bar">
+            <Button variant="primary" onPress={handleSaveSettings} testId="save-renpho-btn">
+              <Icon name="save" />
+              <span>Renpho Ayarlarını Kaydet</span>
+            </Button>
+          </div>
+        </Panel>
+
+        <Panel
+          title="2. Garmin Smart Band (Garmin Connect)"
+          actions={
+            <Tag
+              tone={settings.has_garmin_password ? 'nominal' : 'neutral'}
+              label={settings.has_garmin_password ? 'Bulut Hesabı Bağlı' : 'Hesap Bekleniyor'}
+            />
+          }
+        >
+          <p className="hs-page-subtitle">
+            Garmin Connect hesabınızı girin. Uyku evreleri, Body Battery, stres, dinlenik nabız ve HRV otomatik çekilir.
+          </p>
+          <Input
+            label="Garmin Connect E-posta Adresi"
+            value={formState.garmin_email}
+            placeholder="ornek@eposta.com"
+            onChange={(val) => setFormState({ ...formState, garmin_email: val })}
+            testId="input-garmin-email"
+          />
+          <Input
+            label={`Garmin Connect Parolası (Durum: ${settings.garmin_password_masked})`}
+            type="password"
+            value={formState.garmin_password}
+            placeholder="Yeni parola girin veya korumak için boş bırakın"
+            onChange={(val) => setFormState({ ...formState, garmin_password: val })}
+            testId="input-garmin-password"
+          />
+          <div className="hs-filter-bar">
+            <Button variant="primary" onPress={handleSaveSettings} testId="save-garmin-btn">
+              <Icon name="save" />
+              <span>Garmin Ayarlarını Kaydet</span>
+            </Button>
+          </div>
+        </Panel>
+
+        <Panel
+          title="3. Samsung Galaxy Watch6 (Health Connect)"
+          actions={
+            <Tag
+              tone={isHealthy ? 'nominal' : 'neutral'}
+              label={isHealthy ? 'Webhook Canlı' : 'Sinyal Bekleniyor'}
+            />
+          }
+        >
+          <p className="hs-page-subtitle">
+            Telefonunuzdan gelen Health Connect Webhook doğrulama anahtarı, dışa aktarım klasörü ve heartbeat eşiği.
+          </p>
+          <Input
+            label="Watch6 Yedek Klasörü (WATCH_EXPORT_DIR)"
+            value={formState.watch_export_dir}
+            onChange={(val) => setFormState({ ...formState, watch_export_dir: val })}
+            testId="input-watch-export-dir"
+          />
+          <Input
+            label={`Webhook Güvenlik Anahtarı / Token (Durum: ${settings.webhook_secret_masked})`}
+            type="password"
+            value={formState.webhook_secret}
+            placeholder="Opsiyonel paylaşımlı webhook anahtarı"
+            onChange={(val) => setFormState({ ...formState, webhook_secret: val })}
+            testId="input-webhook-secret"
+          />
+          <Input
+            label="Beklenen Webhook Heartbeat Eşiği (Dakika)"
+            value={formState.webhook_expected_interval_minutes}
+            onChange={(val) => setFormState({ ...formState, webhook_expected_interval_minutes: val })}
+            error={intervalError}
+            testId="input-heartbeat-interval"
+          />
+          <div className="hs-filter-bar">
+            <Button variant="primary" onPress={handleSaveSettings} testId="save-watch6-btn">
+              <Icon name="save" />
+              <span>Watch6 Ayarlarını Kaydet</span>
+            </Button>
+          </div>
+        </Panel>
+
+        <Panel
+          title="4. Gemini AI Danışman ve Otomasyon Periyodu"
+          actions={
+            <Tag
+              tone={settings.has_gemini_api_key ? 'nominal' : 'neutral'}
+              label={settings.has_gemini_api_key ? 'Gemini API Aktif' : 'Klinik Motor Modu'}
+            />
+          }
+        >
+          <p className="hs-page-subtitle">
+            Çoklu cihaz yapay zekâ analizi için Gemini API anahtarı ve arka plan otomatik senkronizasyon sıklığı.
+          </p>
+          <Input
+            label={`Gemini AI API Anahtarı (Durum: ${settings.gemini_api_key_masked})`}
+            type="password"
+            value={formState.gemini_api_key}
+            placeholder="AIza... (Boş bırakılırsa deterministik klinik motor çalışır)"
+            onChange={(val) => setFormState({ ...formState, gemini_api_key: val })}
+            testId="input-gemini-key"
+          />
+          <Input
+            label="Otomatik Bulut Senkronizasyon Sıklığı (Dakika)"
+            value={formState.auto_sync_interval_minutes}
+            onChange={(val) => setFormState({ ...formState, auto_sync_interval_minutes: val })}
+            error={intervalError}
+            testId="input-auto-sync-interval"
+          />
+          <div className="hs-filter-bar">
+            <Button variant="primary" onPress={handleSaveSettings} testId="save-ai-btn">
+              <Icon name="save" />
+              <span>AI ve Otomasyon Ayarlarını Kaydet</span>
+            </Button>
+            <Button variant="default" onPress={loadSettingsAndHeartbeat}>
+              <span>Değişiklikleri Geri Al</span>
+            </Button>
+          </div>
+        </Panel>
+      </div>
+
       <Table
         title="Cihaz Bazlı Webhook ve Köprü Canlılık (Heartbeat) Durumu"
         rowKey="source"
@@ -267,90 +417,6 @@ export function SettingsScreen({
       <Panel title="Telefon Otomasyonu (Health Connect / Tasker / MacroDroid) Heartbeat Örneği">
         <CodeBlock content={curlSnippet} />
       </Panel>
-
-      <FormTemplate
-        title="Bulut Cihaz Kimlik Bilgileri ve Otomasyon Parametreleri"
-        description="Renpho ES-26BB-B, Garmin Connect ve Gemini AI anahtarlarını doğrudan veritabanına kaydedin. Parola alanlarını boş bırakırsanız mevcut kayıtlı parola korunur."
-        onSubmit={handleSaveSettings}
-        onCancel={loadSettingsAndHeartbeat}
-        submitLabel="Ayarları Kaydet ve Uygula"
-        cancelLabel="Değişiklikleri Geri Al"
-      >
-        <Input
-          label="Renpho Bulut E-posta Adresi (ES-26BB-B)"
-          value={formState.renpho_email}
-          placeholder="ornek@eposta.com"
-          onChange={(val) => setFormState({ ...formState, renpho_email: val })}
-          testId="input-renpho-email"
-        />
-
-        <Input
-          label={`Renpho Bulut Parolası (Durum: ${settings.renpho_password_masked})`}
-          type="password"
-          value={formState.renpho_password}
-          placeholder="Yeni parola girin veya korumak için boş bırakın"
-          onChange={(val) => setFormState({ ...formState, renpho_password: val })}
-          testId="input-renpho-password"
-        />
-
-        <Input
-          label="Garmin Connect E-posta Adresi (Smart Band)"
-          value={formState.garmin_email}
-          placeholder="ornek@eposta.com"
-          onChange={(val) => setFormState({ ...formState, garmin_email: val })}
-          testId="input-garmin-email"
-        />
-
-        <Input
-          label={`Garmin Connect Parolası (Durum: ${settings.garmin_password_masked})`}
-          type="password"
-          value={formState.garmin_password}
-          placeholder="Yeni parola girin veya korumak için boş bırakın"
-          onChange={(val) => setFormState({ ...formState, garmin_password: val })}
-          testId="input-garmin-password"
-        />
-
-        <Input
-          label={`Gemini AI API Anahtarı (Durum: ${settings.gemini_api_key_masked})`}
-          type="password"
-          value={formState.gemini_api_key}
-          placeholder="AIza... (Boş bırakılırsa deterministik klinik motor çalışır)"
-          onChange={(val) => setFormState({ ...formState, gemini_api_key: val })}
-          testId="input-gemini-key"
-        />
-
-        <Input
-          label={`Webhook Güvenlik Anahtarı / Token (Durum: ${settings.webhook_secret_masked})`}
-          type="password"
-          value={formState.webhook_secret}
-          placeholder="Opsiyonel paylaşımlı webhook anahtarı"
-          onChange={(val) => setFormState({ ...formState, webhook_secret: val })}
-          testId="input-webhook-secret"
-        />
-
-        <Input
-          label="Samsung Galaxy Watch6 Yedek Klasörü (WATCH_EXPORT_DIR)"
-          value={formState.watch_export_dir}
-          onChange={(val) => setFormState({ ...formState, watch_export_dir: val })}
-          testId="input-watch-export-dir"
-        />
-
-        <Input
-          label="Otomatik Bulut Senkronizasyon Sıklığı (Dakika)"
-          value={formState.auto_sync_interval_minutes}
-          onChange={(val) => setFormState({ ...formState, auto_sync_interval_minutes: val })}
-          error={intervalError}
-          testId="input-auto-sync-interval"
-        />
-
-        <Input
-          label="Beklenen Webhook Heartbeat Eşiği (Dakika)"
-          value={formState.webhook_expected_interval_minutes}
-          onChange={(val) => setFormState({ ...formState, webhook_expected_interval_minutes: val })}
-          error={intervalError}
-          testId="input-heartbeat-interval"
-        />
-      </FormTemplate>
     </DetailTemplate>
   );
 }
