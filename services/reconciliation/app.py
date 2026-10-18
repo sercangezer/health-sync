@@ -216,8 +216,12 @@ def reconcile_all_days(db: Session) -> int:
     strategy = cfg.merge_strategy
 
     scale_rows = db.query(models.ScaleMeasurement).order_by(models.ScaleMeasurement.timestamp.asc()).all()
+    height_m = max(1.2, min(2.3, float(cfg.height_cm or 178.0) / 100.0))
     scale_by_date: Dict[str, models.ScaleMeasurement] = {}
     for s in scale_rows:
+        expected_bmi = round(float(s.weight_kg) / (height_m * height_m), 2)
+        if abs(float(s.bmi or 0.0) - expected_bmi) >= 0.05:
+            s.bmi = expected_bmi
         scale_by_date[s.date] = s
 
     wearable_rows = db.query(models.DeviceDailyMetric).all()
@@ -241,8 +245,14 @@ def reconcile_all_days(db: Session) -> int:
         w6 = w_map.get("galaxy_watch6")
         gm = w_map.get("garmin_band")
 
+        w6_steps_cand = w6.steps if (w6 and w6.steps and w6.steps > 0) else None
+        gm_steps_cand = gm.steps if (gm and gm.steps and gm.steps > 0) else None
+        if w6_steps_cand is None and gm_steps_cand is None:
+            w6_steps_cand = w6.steps if w6 else None
+            gm_steps_cand = gm.steps if gm else None
+
         steps_val, steps_src = _resolve_metric(
-            {"galaxy_watch6": w6.steps if w6 else None, "garmin_band": gm.steps if gm else None},
+            {"galaxy_watch6": w6_steps_cand, "garmin_band": gm_steps_cand},
             act_prio,
             strategy,
         )

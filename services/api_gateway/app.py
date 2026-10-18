@@ -489,6 +489,7 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
         "cycle_start_date": cycle_start,
         "metrics": metrics,
         "composition_quality": insights.get("composition_quality", {}),
+        "clinical_evaluation": insights.get("clinical_evaluation", {}),
         "weight_series": weight_series,
         "recovery_series": recovery_series,
         "daily_rows": daily_rows,

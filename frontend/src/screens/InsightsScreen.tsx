@@ -78,6 +78,7 @@ export function InsightsScreen({
   }
 
   const comp = insights.composition_quality || {};
+  const clinical = insights.clinical_evaluation;
   const barData = (insights.rolling_series || []).slice(-10).map((r: any) => ({
     date: r.date.slice(5),
     'Uyku (sa)': r.sleep_hours || 0,
@@ -119,6 +120,30 @@ export function InsightsScreen({
         { label: 'Su Değişimi', value: `${comp.water_pct_delta ?? 0} puan` },
       ]}
     >
+      {clinical?.pillars?.length > 0 && forcedState !== 'empty' ? (
+        <Panel title="Uzman Hekim Branş Değerlendirmesi">
+          <p className="hs-page-subtitle">{clinical.headline}</p>
+          <div className="hs-alerts-grid">
+            {clinical.pillars.map((p: any) => (
+              <article
+                key={p.id}
+                className={`hs-alert-card hs-alert-card-${p.status === 'warning' ? 'warning' : 'nominal'}`}
+              >
+                <div className="hs-alert-header">
+                  <Tag
+                    tone={p.status === 'warning' ? 'warning' : 'nominal'}
+                    label={p.specialty}
+                  />
+                  <span className="hs-alert-metric">{p.metric}</span>
+                </div>
+                <h2 className="hs-alert-title">{p.title}</h2>
+                <p className="hs-alert-detail">{p.summary}</p>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
       <div className="hs-grid-2">
         <Panel title="Vücut Kompozisyonu Özeti">
           <p className="hs-page-subtitle">{comp.interpretation || 'Veri bekleniyor.'}</p>

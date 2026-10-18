@@ -49,6 +49,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     anom_block = "\n".join(anom_lines) if anom_lines else "- Aktif anomali yok."
 
     comp_q = insights.get("composition_quality", {})
+    clinical = insights.get("clinical_evaluation", {})
     comp_sum = comparison.get("summary", {})
 
     gender_label = "Erkek" if (getattr(prof, "gender", "male") if prof else "male") == "male" else "Kadın"
@@ -59,37 +60,47 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     allergies = (getattr(prof, "allergies_and_notes", "") if prof else "") or "Belirtilmedi"
     start_w = getattr(prof, "starting_weight_kg", 85.0) if prof else 85.0
 
+    pillar_lines = [
+        f"- [{p.get('specialty')}] {p.get('title')} ({p.get('metric')}): {p.get('summary')}"
+        for p in clinical.get("pillars", [])
+    ]
+    pillar_block = "\n".join(pillar_lines) if pillar_lines else "- Klinik değerlendirme hazırlanıyor."
+
     prompt_text = (
-        "# Çoklu Cihaz Biyometrik ve Metabolik Değerlendirme İsteği\n\n"
-        "Aşağıda **Renpho ES-26BB-B** akıllı tartı, **Samsung Galaxy Watch6** ve **Garmin Smart Band** "
-        "cihazlarımdan otomatik toplanıp öncelik kurallarıyla birleştirilmiş güncel sağlık verilerim yer almaktadır.\n\n"
+        "# Uzman Doktor Heyeti — Çoklu Cihaz Biyometrik ve Tıbbi Takip İsteği\n\n"
+        "Sen Endokrinoloji, Kardiyoloji, Gastroenteroloji, Fizik Tedavi ve Uyku Hekimliği uzmanlarından oluşan "
+        "bir klinik danışman heyetisin. Aşağıda **Renpho ES-26BB-B** akıllı tartı, **Samsung Galaxy Watch6** ve "
+        "**Garmin Smart Band** cihazlarımdan otomatik toplanan güncel sağlık verilerim ve tıbbi geçmişim yer almaktadır.\n\n"
         f"## 1. Kişisel Profil, Tıbbi Geçmiş ve Hedefler\n"
         f"- Doğum Tarihi: {birth_date} | Cinsiyet: {gender_label}\n"
-        f"- Boy: {cfg.height_cm} cm | Başlangıç Kilosu: {start_w} kg | Hedef Kilo: {cfg.target_weight_kg} kg\n"
+        f"- Boy: {cfg.height_cm} cm | Başlangıç Kilosu: {start_w} kg | Güncel Kilo: {clinical.get('current_weight_kg', start_w)} kg | Hedef Kilo: {cfg.target_weight_kg} kg\n"
+        f"- Başlangıçtan Bugüne Verilen Kilo: {clinical.get('total_lost_kg', 0)} kg | Bel Omurgası Yük Azalımı: -{clinical.get('spine_relief_kg', 0)} kg\n"
         f"- Geçirilen Ameliyatlar: {surgeries}\n"
         f"- Kronik Rahatsızlıklar: {chronic}\n"
         f"- İlaç ve Takviyeler: {meds}\n"
         f"- Beslenme Notları / Alerjiler: {allergies}\n"
-        f"- Döngü Başlangıç Tarihi: {cfg.cycle_start_date}\n"
+        f"- Kişiselleştirilmiş Günlük Hedefler: {clinical.get('daily_water_liters', 3.0)} L Su | {clinical.get('daily_protein_g', 150)} g Protein | {clinical.get('daily_step_target', 6500)}+ Adım\n"
         f"- Güncel Toparlanma Skoru: {insights.get('recovery_score', 0)}/100 ({insights.get('recovery_status')})\n"
         f"- Kilo Değişim Kalitesi: {comp_q.get('headline')} "
         f"(Toplam: {comp_q.get('total_weight_delta_kg')} kg, Yağ: {comp_q.get('fat_mass_delta_kg')} kg, "
         f"Kas: {comp_q.get('muscle_mass_delta_kg')} kg, Su: {comp_q.get('water_pct_delta')} puan)\n\n"
-        f"## 2. Son Renpho ES-26BB-B Tartı Ölçümleri (13 Metrik Özeti)\n"
+        f"## 2. Uzman Branş Bulguları\n"
+        f"{pillar_block}\n\n"
+        f"## 3. Son Renpho ES-26BB-B Tartı Ölçümleri (13 Metrik Özeti)\n"
         f"{scale_block}\n\n"
-        f"## 3. Galaxy Watch6 vs. Garmin Smart Band Cihaz Uyum Özeti\n"
+        f"## 4. Galaxy Watch6 vs. Garmin Smart Band Cihaz Uyum Özeti\n"
         f"- Cihazlar Arası Genel Uyum Skoru: %{comparison.get('agreement_score', 0)}\n"
         f"- Ortalama Adım Farkı: %{comp_sum.get('avg_steps_diff_pct', 0)} | "
         f"Ortalama Uyku Farkı: {comp_sum.get('avg_sleep_diff_hours', 0)} saat | "
         f"Ortalama RHR Farkı: {comp_sum.get('avg_rhr_diff_bpm', 0)} bpm\n\n"
-        f"## 4. Çapraz Cihaz Korelasyon Bulguları (Pearson r)\n"
+        f"## 5. Çapraz Cihaz Korelasyon Bulguları (Pearson r)\n"
         f"{corr_block}\n\n"
-        f"## 5. Tespit Edilen Biyometrik Anomaliler\n"
+        f"## 6. Tespit Edilen Biyometrik Uyarılar\n"
         f"{anom_block}\n\n"
-        "## Beklenen Analiz\n"
-        "1. Kişisel profilimi ve geçirdiğim ameliyatları/tıbbi geçmişimi dikkate alarak yağ kaybı hızımı ve kas kütlesi korunumumu değerlendir.\n"
-        "2. Garmin uyku/stres/Body Battery ve Galaxy Watch6 HRV/nabız verilerime göre toparlanma kalitemi yorumla.\n"
-        "3. Önümüzdeki 7 gün için beslenme, hidrasyon, uyku ve antrenman yoğunluğu önerilerini maddeler halinde sun."
+        "## Beklenen Uzman Hekim Analizi\n"
+        "1. İnsülin direnci, iç organ yağlanması, safra kesesi ameliyatı ve bel fıtığı/kuyruk sokumu geçmişimi dikkate alarak mevcut kilo kaybımı ve kas korunumumu değerlendir.\n"
+        "2. Garmin gece HRV/uyku/Body Battery ve Galaxy Watch6 SpO2/nabız/adım verilerime göre kalp-damar, solunum ve sinir sistemi toparlanmamı yorumla.\n"
+        "3. Önümüzdeki 7 gün için uygulanabilir, net ve maddeler halinde doktor reçetesi niteliğinde beslenme, su, uyku ve bel dostu hareket planı sun."
     )
 
     return {
@@ -111,6 +122,7 @@ def generate_ai_report(db: Session, focus_area: str = "holistic") -> Dict[str, A
     insights = build_analytics_insights(db, range_key="30d")
     comparison = build_wearables_comparison(db, days=14)
     comp_q = insights.get("composition_quality", {})
+    clinical = insights.get("clinical_evaluation", {})
     rec_score = insights.get("recovery_score", 0.0)
     agreement = comparison.get("agreement_score", 0.0)
 
@@ -137,27 +149,32 @@ def generate_ai_report(db: Session, focus_area: str = "holistic") -> Dict[str, A
 
     if not markdown_text:
         focus_titles = {
-            "holistic": "Bütüncül Çoklu Cihaz Sağlık ve Metabolizma Sentezi",
-            "body_composition": "Renpho ES-26BB-B Vücut Kompozisyonu ve Yağ/Kas Kalitesi Analizi",
-            "recovery_sleep": "Garmin & Galaxy Watch6 Otonom Toparlanma, HRV ve Uyku Analizi",
-            "wearable_calibration": "Galaxy Watch6 vs. Garmin Smart Band Sensör Uyum ve Öncelik Değerlendirmesi",
+            "holistic": "Uzman Hekim Heyeti — Bütüncül Sağlık ve Metabolizma Konsültasyonu",
+            "body_composition": "Endokrinoloji & Beslenme — İnsülin Direnci, İç Organ Yağı ve Kas Korunumu",
+            "recovery_sleep": "Kardiyoloji & Uyku Hekimliği — Gece HRV, SpO2 ve Otonom Toparlanma",
+            "wearable_calibration": "Cihaz Uyum ve Biyometrik Güvenilirlik Değerlendirmesi",
         }
+        pillars_md = "\n".join(
+            f"- **{p.get('specialty')} ({p.get('title')}):** {p.get('summary')} *({p.get('metric')})*"
+            for p in clinical.get("pillars", [])
+        )
         markdown_text = (
             f"## {focus_titles[focus]}\n\n"
-            f"### 1. Vücut Kompozisyonu (Renpho ES-26BB-B)\n"
-            f"- **Durum:** {comp_q.get('headline')}\n"
-            f"- **Net Değişim:** Toplam `{comp_q.get('total_weight_delta_kg')} kg` değişimin "
+            f"### 1. Genel Klinik Değerlendirme ve Vücut Kompozisyonu\n"
+            f"- **Özet:** {clinical.get('headline', comp_q.get('headline'))}\n"
+            f"- **Dönemlik Kompozisyon Değişimi:** Toplam `{comp_q.get('total_weight_delta_kg')} kg` değişimin "
             f"`%{comp_q.get('fat_loss_share_pct')}` kadarı yağ dokusundan (`{comp_q.get('fat_mass_delta_kg')} kg`), "
-            f"`%{comp_q.get('muscle_loss_share_pct')}` kadarı kas dokusundan (`{comp_q.get('muscle_mass_delta_kg')} kg`) gerçekleşmiştir.\n"
-            f"- **Yorum:** {comp_q.get('interpretation')}\n\n"
-            f"### 2. Kardiyovasküler ve Otonom Toparlanma (Galaxy Watch6 + Garmin Smart Band)\n"
+            f"`%{comp_q.get('muscle_loss_share_pct')}` kadarı kas dokusundan (`{comp_q.get('muscle_mass_delta_kg')} kg`) gerçekleşmiştir.\n\n"
+            f"### 2. Branş Bazlı Uzman Hekim Notları\n"
+            f"{pillars_md}\n\n"
+            f"### 3. Kardiyovasküler ve Sensör Özeti\n"
             f"- **Bileşik Toparlanma Skoru:** `{rec_score}/100` (`{insights.get('recovery_status')}`)\n"
-            f"- **Sensör Uyum Skoru:** Watch6 ve Garmin arasında `%{agreement}` ölçüm tutarlılığı mevcuttur.\n"
-            f"- **Korelasyon Özeti:** Uyku süresi 7 saatin üzerinde tutulduğunda HRV artmakta ve ertesi sabah tartıda ödem dalgalanması azalmaktadır.\n\n"
-            f"### 3. Eylem Planı (Önümüzdeki 7 Gün)\n"
-            f"1. **Protein ve Hidrasyon:** Kas korunumu için kilogram başına 1.6g protein ve günlük 2.5L su hedefini koruyun.\n"
-            f"2. **Uyku Penceresi:** Garmin Body Battery şarjını 85+ seviyesinde tutmak için 7.2 saat uyku hedefleyin.\n"
-            f"3. **Aktivite:** Galaxy Watch6 üzerinde günlük 8.500+ adım ve haftada 3 gün direnç egzersizi uygulayın."
+            f"- **Sensör Uyum Skoru:** Watch6 ve Garmin arasında `%{agreement}` ölçüm tutarlılığı mevcuttur.\n\n"
+            f"### 4. Önümüzdeki 7 Gün İçin Doktor Reçetesi\n"
+            f"1. **Safra ve Kas Korumalı Beslenme:** Günlük **{clinical.get('daily_protein_g', 150)} g protein** ve **{clinical.get('daily_water_liters', 3.5)} L su** hedefini koruyun; safra çamurunu önlemek için 14 saati aşan açlıklardan kaçının.\n"
+            f"2. **İnsülin Direnci İçin Akşam Yürüyüşü:** Akşam yemeğinden 30 dakika sonra 15-20 dakikalık yürüyüş yaparak sabah kan şekeri ve iç organ yağlanmasını düşürün.\n"
+            f"3. **Bel Fıtığı ve Masa Başı Ergonomisi:** Kesintisiz **{clinical.get('desk_break_minutes', 45)} dakikadan fazla oturmayın**; günlük **{clinical.get('daily_step_target', 6500)}+ adım** hedefini bel dostu düz yürüyüşle tamamlayın.\n"
+            f"4. **Gece Oksijeni (SpO2) ve Uyku:** Gece SpO2 değerini %95'e yaklaştırmak için yan yatış pozisyonunu tercih edin ve 7.5 saat uyku hedefleyin."
         )
 
     report = models.AIInsightReport(

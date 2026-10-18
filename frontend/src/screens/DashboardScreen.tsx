@@ -5,6 +5,7 @@ import {
   DashboardTemplate,
   Icon,
   LineChart,
+  Panel,
   Select,
   StateBlock,
   Table,
@@ -132,6 +133,7 @@ export function DashboardScreen({
 
   const syncHours = Math.round(((syncStatus?.auto_sync_interval_minutes || 360) / 60) * 10) / 10;
   const alerts = overview.anomalies || [];
+  const clinical = overview.clinical_evaluation;
 
   return (
     <DashboardTemplate
@@ -164,6 +166,38 @@ export function DashboardScreen({
       }
     >
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
+
+      {clinical?.pillars?.length > 0 && forcedState !== 'empty' ? (
+        <Panel
+          title="Uzman Hekim Günlük Değerlendirmesi"
+          actions={
+            <Tag
+              tone="nominal"
+              label={`Günlük Hedef: ${clinical.daily_water_liters} L Su • ${clinical.daily_protein_g} g Protein • ${clinical.daily_step_target}+ Adım`}
+            />
+          }
+        >
+          <p className="hs-page-subtitle">{clinical.headline}</p>
+          <div className="hs-alerts-grid">
+            {clinical.pillars.map((p: any) => (
+              <article
+                key={p.id}
+                className={`hs-alert-card hs-alert-card-${p.status === 'warning' ? 'warning' : 'nominal'}`}
+              >
+                <div className="hs-alert-header">
+                  <Tag
+                    tone={p.status === 'warning' ? 'warning' : 'nominal'}
+                    label={p.specialty}
+                  />
+                  <span className="hs-alert-metric">{p.metric}</span>
+                </div>
+                <h2 className="hs-alert-title">{p.title}</h2>
+                <p className="hs-alert-detail">{p.summary}</p>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
 
       {alerts.length > 0 ? (
         <section aria-label="Önemli sağlık uyarıları">
