@@ -1655,7 +1655,18 @@ const MOCK_API_RESPONSES: Record<string, unknown> = {
     "merge_strategy": "priority",
     "cycle_start_date": "2026-10-05",
     "target_weight_kg": 78.0,
-    "height_cm": 178.0
+    "height_cm": 178.0,
+    "full_name": "Sercan Gezer",
+    "birth_date": "1990-01-01",
+    "age": 36,
+    "gender": "male",
+    "blood_type": "A Rh+",
+    "starting_weight_kg": 85.0,
+    "activity_level": "moderate",
+    "surgeries": "",
+    "chronic_conditions": "",
+    "medications": "",
+    "allergies_and_notes": ""
   },
   "/api/ai/prompts": {
     "prompt_text": "# Çoklu Cihaz Biyometrik ve Metabolik Değerlendirme İsteği\n\nAşağıda **Renpho ES-26BB-B** akıllı tartı, **Samsung Galaxy Watch6** ve **Garmin Smart Band** cihazlarımdan otomatik toplanıp öncelik kurallarıyla birleştirilmiş güncel sağlık verilerim yer almaktadır.\n\n## 1. Takip Döngüsü ve Hedef Parametreler\n- Döngü Başlangıç Tarihi: 2026-10-05\n- Boy: 178.0 cm | Hedef Kilo: 78.0 kg\n- Güncel Toparlanma Skoru: 83.0/100 (nominal)\n- Kilo Değişim Kalitesi: Sağlıklı Yağ Kaybı ve Kas Korunumu (Toplam: -2.22 kg, Yağ: -1.8 kg, Kas: -0.18 kg, Su: 1.2 puan)\n\n## 2. Son Renpho ES-26BB-B Tartı Ölçümleri (13 Metrik Özeti)\n- 2026-10-18: Kilo=82.63 kg | BMI=26.08 | Yağ=%23.34 | Kas=60.07 kg | Su=%56.3 | İç Organ Yağı=10.5 | BMR=1719 kcal\n- 2026-10-17: Kilo=83.17 kg | BMI=26.25 | Yağ=%23.53 | Kas=60.13 kg | Su=%56.06 | İç Organ Yağı=10.5 | BMR=1721 kcal\n- 2026-10-16: Kilo=83.11 kg | BMI=26.23 | Yağ=%23.6 | Kas=60.09 kg | Su=%56.06 | İç Organ Yağı=10.5 | BMR=1723 kcal\n- 2026-10-15: Kilo=83.05 kg | BMI=26.21 | Yağ=%23.67 | Kas=60.15 kg | Su=%56.06 | İç Organ Yağı=10.5 | BMR=1725 kcal\n- 2026-10-14: Kilo=83.59 kg | BMI=26.38 | Yağ=%23.86 | Kas=60.11 kg | Su=%55.82 | İç Organ Yağı=10.5 | BMR=1727 kcal\n- 2026-10-13: Kilo=83.53 kg | BMI=26.36 | Yağ=%23.93 | Kas=60.17 kg | Su=%55.82 | İç Organ Yağı=10.5 | BMR=1729 kcal\n- 2026-10-12: Kilo=83.47 kg | BMI=26.34 | Yağ=%24.0 | Kas=60.13 kg | Su=%55.82 | İç Organ Yağı=10.5 | BMR=1731 kcal\n\n## 3. Galaxy Watch6 vs. Garmin Smart Band Cihaz Uyum Özeti\n- Cihazlar Arası Genel Uyum Skoru: %94.7\n- Ortalama Adım Farkı: %3.0 | Ortalama Uyku Farkı: 0.15 saat | Ortalama RHR Farkı: 0.8 bpm\n\n## 4. Çapraz Cihaz Korelasyon Bulguları (Pearson r)\n- Uyku Süresi (Garmin/Watch6) ↔ Ertesi Gün Tartı Değişimi (Renpho): r=1.0 (Dengeli) -> Uyku süresi 7 saatin altına düştüğünde ertesi sabah tartıda ödem kaynaklı geçici artış eğilimi gözlenmektedir.\n- Günlük Stres Skoru (Garmin) ↔ HRV Otonom Değişkenlik (Watch6/Garmin): r=-0.98 (Güçlü Negatif) -> Stres skoru yükseldiğinde HRV (RMSSD) düşmekte ve otonom sinir sistemi toparlanması yavaşlamaktadır.\n- Günlük Adım & Aktif Kalori (Watch6) ↔ Vücut Yağ Oranı (Renpho ES-26BB-B): r=-0.89 (Güçlü Negatif) -> 8.500+ adım barajının korunduğu günlerde yağ oranı ve iç organ yağı (visceral fat) düzenli düşüş göstermektedir.\n- Dinlenik Nabız RHR (Watch6) ↔ Toplam Uyku Kalitesi: r=-0.78 (Orta Negatif) -> Kaliteli ve derin uyku evresinin yüksek olduğu gecelerde sabah dinlenik nabzı daha düşük ölçülmektedir.\n\n## 5. Tespit Edilen Biyometrik Anomaliler\n- [NOMINAL] Tüm Biyometrik Göstergeler Nominal Aralıkta (Toparlanma 83.0/100): Renpho ES-26BB-B, Galaxy Watch6 ve Garmin Smart Band metriklerinde kritik sapma tespit edilmedi.\n\n## Beklenen Analiz\n1. Yağ kaybı hızımı ve kas kütlesi korunumumu değerlendir.\n2. Garmin uyku/stres/Body Battery ve Galaxy Watch6 HRV/nabız verilerime göre toparlanma kalitemi yorumla.\n3. Önümüzdeki 7 gün için beslenme, hidrasyon, uyku ve antrenman yoğunluğu önerilerini maddeler halinde sun.",
@@ -1781,7 +1792,7 @@ async function setupDeterministicApiMocks(page: Page) {
   });
 }
 
-const TABS = ['dashboard', 'scale', 'insights', 'wearables', 'ai', 'settings', 'gallery'] as const;
+const TABS = ['dashboard', 'profile', 'scale', 'insights', 'wearables', 'ai', 'settings', 'gallery'] as const;
 const THEMES = ['dark', 'light'] as const;
 
 test.describe('HealthSync Section 4 Visual, Accessibility & Offline Verification Suite', () => {

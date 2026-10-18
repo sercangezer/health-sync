@@ -115,85 +115,82 @@ export function AiScreen({
 
   return (
     <DetailTemplate
-      title="AI Danışman, Prompt Stüdyosu ve Tam Otomatik Senkronizasyon Merkezi"
-      statusLabel="ai-advisor-service Aktif"
+      title="Yapay Zeka Danışmanı"
+      statusLabel="Hazır"
       statusTone="nominal"
       actionBar={
         <>
           <Select
-            label="Analiz odağı"
+            label="Odak"
             value={focusArea}
             onChange={setFocusArea}
             options={[
-              { value: 'holistic', label: 'Bütüncül Çoklu Cihaz Analizi' },
-              { value: 'body_composition', label: 'Renpho ES-26BB-B Yağ/Kas Kalitesi' },
-              { value: 'recovery_sleep', label: 'Garmin & Watch6 Toparlanma ve Uyku' },
-              { value: 'wearable_calibration', label: 'Watch6 vs. Garmin Sensör Kalibrasyonu' },
+              { value: 'holistic', label: 'Genel Sağlık Özeti' },
+              { value: 'body_composition', label: 'Kilo, Yağ ve Kas' },
+              { value: 'recovery_sleep', label: 'Uyku ve Dinlenme' },
+              { value: 'wearable_calibration', label: 'Cihaz Uyumu' },
             ]}
           />
           <Button variant="default" onPress={handleSimulateWatch6Webhook}>
             <Icon name="webhook" />
-            <span>Watch6 Webhook doğrula</span>
+            <span>Saati Güncelle</span>
           </Button>
           <Button variant="primary" onPress={handleGenerateReport}>
             <Icon name="auto_awesome" />
-            <span>Yeni AI raporu üret</span>
+            <span>Rapor Üret</span>
           </Button>
         </>
       }
       kvItems={[
-        { label: 'Aktif Veri Günü', value: `${promptData.data_days_count} gün` },
-        { label: 'Kayıtlı AI Raporu', value: `${reports.length} rapor` },
-        { label: 'Watch6 Webhook Ucu', value: promptData.webhook_url_hint },
-        { label: 'Otomatik Çekim Periyodu', value: `${syncStatus?.auto_sync_interval_minutes || 60} dakika` },
+        { label: 'Veri Günü', value: `${promptData.data_days_count} gün` },
+        { label: 'Kayıtlı Rapor', value: `${reports.length} rapor` },
+        { label: 'Otomatik Çekim', value: `${syncStatus?.auto_sync_interval_minutes || 60} dk` },
       ]}
     >
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
 
       <Tabs
-        ariaLabel="AI ve otomasyon sekmeleri"
+        ariaLabel="Yapay zeka sekmeleri"
         selectedKey={subTab}
         onSelectionChange={setSubTab}
         items={[
           {
             id: 'reports',
-            label: 'Üretilen AI Anlamlandırma Raporları',
+            label: 'AI Raporları',
             content: (
               <div className="hs-template">
                 {latestReport ? (
                   <Panel
-                    title={`Son Rapor (#${latestReport.id}) — Odak: ${latestReport.focus_area} (${latestReport.source_mode})`}
+                    title={`Güncel Değerlendirme (#${latestReport.id})`}
                   >
                     <CodeBlock content={latestReport.summary_markdown} />
                   </Panel>
-                ) : null}
-
-                <Table
-                  title="Geçmiş AI Yorumlama Raporları"
-                  rowKey="id"
-                  data={reports}
-                  emptyMessage="Henüz üretilmiş AI anlamlandırma raporu bulunmuyor."
-                  columns={[
-                    { key: 'id', header: 'Rapor No', numeric: true },
-                    { key: 'created_at', header: 'Üretim Zamanı' },
-                    { key: 'focus_area', header: 'Odak Alanı' },
-                    { key: 'source_mode', header: 'Motor' },
-                    { key: 'summary_markdown', header: 'Rapor Özeti' },
-                  ]}
-                />
+                ) : (
+                  <Table
+                    title="Değerlendirme Raporları"
+                    rowKey="id"
+                    data={reports}
+                    emptyMessage="Henüz üretilmiş yapay zeka raporu bulunmuyor."
+                    columns={[
+                      { key: 'id', header: 'No', numeric: true },
+                      { key: 'created_at', header: 'Tarih' },
+                      { key: 'focus_area', header: 'Konu' },
+                    ]}
+                  />
+                )}
               </div>
             ),
           },
           {
             id: 'prompt',
-            label: 'Kopyalanabilir AI Prompt Stüdyosu',
+            label: 'Hazır Prompt',
             content: (
               <Panel
-                title="Güncel Çoklu Cihaz Verileriyle Doldurulmuş Hazır AI Prompt'u"
+                title="Kopyalanabilir Yapay Zeka Metni"
                 actions={
                   <Button variant="primary" onPress={handleCopyPrompt}>
                     <Icon name="content_copy" />
-                    <span>Prompt metnini kopyala</span>
+                    <span>Kopyala</span>
                   </Button>
                 }
               >
@@ -203,47 +200,26 @@ export function AiScreen({
           },
           {
             id: 'automation',
-            label: 'Cihaz Senkronizasyon Durumu ve Otomasyon Günlüğü',
+            label: 'Senkronizasyon',
             content: (
               <div className="hs-template">
                 <Table
-                  title="Cihaz Mikroservisleri Durumu"
-                  rowKey="provider"
-                  data={syncStatus?.providers || []}
-                  columns={[
-                    { key: 'device_name', header: 'Donanım' },
-                    { key: 'microservice', header: 'Mikroservis' },
-                    { key: 'mode', header: 'Otomasyon Yöntemi' },
-                    { key: 'records_count', header: 'Kayıt Sayısı', numeric: true },
-                    {
-                      key: 'circuit_state',
-                      header: 'Devre Kesici',
-                      render: (row) => (
-                        <Tag
-                          tone={row.circuit_state === 'CLOSED' ? 'nominal' : 'warning'}
-                          label={row.circuit_state}
-                        />
-                      ),
-                    },
-                  ]}
-                />
-
-                <Table
-                  title="Son Otomatik Senkronizasyon Kayıtları (SyncLog)"
+                  title="Son Senkronizasyon İşlemleri"
                   rowKey="id"
+                  pageSize={6}
                   data={syncStatus?.recent_logs || []}
                   columns={[
                     { key: 'created_at', header: 'Zaman' },
-                    { key: 'provider', header: 'Sağlayıcı' },
+                    { key: 'provider', header: 'Cihaz' },
                     {
                       key: 'status',
                       header: 'Durum',
                       render: (row) => (
-                        <Tag tone={row.status === 'nominal' ? 'nominal' : 'warning'} label={row.status} />
+                        <Tag tone={row.status === 'nominal' ? 'nominal' : 'warning'} label={row.status === 'nominal' ? 'Başarılı' : 'Uyarı'} />
                       ),
                     },
-                    { key: 'records_processed', header: 'İşlenen Kayıt', numeric: true },
-                    { key: 'message', header: 'Açıklama' },
+                    { key: 'records_processed', header: 'Kayıt', numeric: true },
+                    { key: 'message', header: 'Bilgi' },
                   ]}
                 />
               </div>

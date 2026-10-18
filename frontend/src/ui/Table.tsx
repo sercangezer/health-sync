@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Button, Checkbox, Icon, Menu, StateBlock, Tooltip } from './primitives';
+import { Button, Checkbox, Icon, StateBlock, Tooltip } from './primitives';
 
 export interface TableColumn<T> {
   key: string;
@@ -39,27 +39,14 @@ export function Table<T extends Record<string, any>>({
 }: TableProps<T>) {
   const [sortKey, setSortKey] = useState<string>(columns[0]?.key || '');
   const [sortAsc, setSortAsc] = useState<boolean>(false);
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const [hiddenCols, setHiddenCols] = useState<Record<string, boolean>>({});
   const [selectedKeys, setSelectedKeys] = useState<Record<string, boolean>>({});
   const [page, setPage] = useState<number>(1);
 
-  const visibleColumns = useMemo(
-    () => columns.filter((c) => !hiddenCols[c.key]),
-    [columns, hiddenCols]
-  );
+  const visibleColumns = columns;
 
   const filteredAndSorted = useMemo(() => {
-    const filtered = data.filter((row) =>
-      visibleColumns.every((col) => {
-        const fVal = (filters[col.key] || '').trim().toLowerCase();
-        if (!fVal) return true;
-        const raw = row[col.key];
-        return String(raw ?? '').toLowerCase().includes(fVal);
-      })
-    );
-    if (!sortKey) return filtered;
-    return [...filtered].sort((a, b) => {
+    if (!sortKey) return data;
+    return [...data].sort((a, b) => {
       const va = a[sortKey];
       const vb = b[sortKey];
       if (va === vb) return 0;
@@ -68,7 +55,7 @@ export function Table<T extends Record<string, any>>({
       const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
       return sortAsc ? cmp : -cmp;
     });
-  }, [data, filters, sortAsc, sortKey, visibleColumns]);
+  }, [data, sortAsc, sortKey]);
 
   const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -123,19 +110,6 @@ export function Table<T extends Record<string, any>>({
               <span>{`${bulkActionLabel} (${selectedList.length})`}</span>
             </Button>
           ) : null}
-          <Menu label="Sütunlar" icon="view_column">
-            {columns.map((col) => (
-              <Checkbox
-                key={col.key}
-                label={col.header}
-                checked={!hiddenCols[col.key]}
-                onChange={(checked) => {
-                  if (!checked && visibleColumns.length <= 1) return;
-                  setHiddenCols((prev) => ({ ...prev, [col.key]: !checked }));
-                }}
-              />
-            ))}
-          </Menu>
         </div>
       </div>
 
@@ -161,36 +135,23 @@ export function Table<T extends Record<string, any>>({
               ) : null}
               {visibleColumns.map((col) => (
                 <th key={col.key} scope="col" className={col.numeric ? 'hs-cell-numeric' : undefined}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                    <button
-                      type="button"
-                      className="hs-sort-btn"
-                      onClick={() => {
-                        if (sortKey === col.key) {
-                          setSortAsc((v) => !v);
-                        } else {
-                          setSortKey(col.key);
-                          setSortAsc(true);
-                        }
-                      }}
-                    >
-                      <span>{col.header}</span>
-                      {sortKey === col.key ? (
-                        <Icon name={sortAsc ? 'arrow_upward' : 'arrow_downward'} />
-                      ) : null}
-                    </button>
-                    <input
-                      type="text"
-                      aria-label={`${col.header} filtrele`}
-                      placeholder="Filtrele..."
-                      value={filters[col.key] || ''}
-                      onChange={(e) => {
-                        setFilters((prev) => ({ ...prev, [col.key]: e.target.value }));
-                        setPage(1);
-                      }}
-                      className="hs-col-filter-input"
-                    />
-                  </div>
+                  <button
+                    type="button"
+                    className="hs-sort-btn"
+                    onClick={() => {
+                      if (sortKey === col.key) {
+                        setSortAsc((v) => !v);
+                      } else {
+                        setSortKey(col.key);
+                        setSortAsc(true);
+                      }
+                    }}
+                  >
+                    <span>{col.header}</span>
+                    {sortKey === col.key ? (
+                      <Icon name={sortAsc ? 'arrow_upward' : 'arrow_downward'} />
+                    ) : null}
+                  </button>
                 </th>
               ))}
             </tr>
@@ -232,25 +193,27 @@ export function Table<T extends Record<string, any>>({
         </table>
       </div>
 
-      <div className="hs-table-pagination">
-        <span>{`Toplam ${filteredAndSorted.length} kayıt (Sayfa ${safePage} / ${totalPages})`}</span>
-        <div className="hs-filter-bar">
-          <Button
-            variant="default"
-            disabled={safePage <= 1}
-            onPress={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            Önceki
-          </Button>
-          <Button
-            variant="default"
-            disabled={safePage >= totalPages}
-            onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            Sonraki
-          </Button>
+      {totalPages > 1 ? (
+        <div className="hs-table-pagination">
+          <span>{`${filteredAndSorted.length} kayıt • Sayfa ${safePage} / ${totalPages}`}</span>
+          <div className="hs-filter-bar">
+            <Button
+              variant="default"
+              disabled={safePage <= 1}
+              onPress={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Önceki
+            </Button>
+            <Button
+              variant="default"
+              disabled={safePage >= totalPages}
+              onPress={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Sonraki
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
     </section>
   );
 }

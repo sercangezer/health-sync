@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import {
   Button,
-  CodeBlock,
   DetailTemplate,
   Icon,
   Input,
@@ -169,10 +168,10 @@ export function SettingsScreen({
   const isHealthy = heartbeat.overall_status === 'healthy';
   const statusTone = isHealthy ? 'nominal' : heartbeat.overall_status === 'stale' ? 'warning' : 'neutral';
   const statusText = isHealthy
-    ? 'Webhook Heartbeat: CANLI'
+    ? 'Tüm Cihazlar Aktif'
     : heartbeat.overall_status === 'stale'
-      ? 'Webhook Heartbeat: GECİKMELİ'
-      : 'Webhook Heartbeat: BEKLENİYOR';
+      ? 'Senkronizasyon Bekleniyor'
+      : 'Cihaz Bekleniyor';
 
   const renphoSource = (heartbeat.sources || []).find((s: any) => s.source === 'renpho_es26bb');
   const garminSource = (heartbeat.sources || []).find((s: any) => s.source === 'garmin_band');
@@ -215,13 +214,9 @@ export function SettingsScreen({
         ? 'Bulut Hesabı Bağlı'
         : 'Doğrulama Bekleniyor';
 
-  const curlSnippet = `curl -X POST ${window.location.origin}/api/webhook/heartbeat \\
-  -H "Content-Type: application/json" \\
-  -d '{"source":"galaxy_watch6","device_label":"Samsung Galaxy Watch6","event_type":"heartbeat","records_received":1,"payload_summary":"Health Connect arka plan sinyali"}'`;
-
   return (
     <DetailTemplate
-      title="Cihaz Bağlantı Ayarları ve Webhook Heartbeat İzleyici"
+      title="Cihaz ve Hesap Ayarları"
       statusLabel={statusText}
       statusTone={statusTone}
       actionBar={
@@ -233,32 +228,26 @@ export function SettingsScreen({
             testId="send-heartbeat-btn"
           >
             <Icon name="monitor_heart" />
-            <span>{probing ? 'Test Gönderiliyor...' : 'Canlı Heartbeat Testi Gönder'}</span>
+            <span>{probing ? 'Kontrol Ediliyor...' : 'Bağlantıyı Test Et'}</span>
           </Button>
           <Button variant="default" onPress={loadSettingsAndHeartbeat} testId="refresh-heartbeat-btn">
             <Icon name="refresh" />
-            <span>Durumu Yenile</span>
+            <span>Yenile</span>
           </Button>
         </>
       }
       kvItems={[
-        { label: 'Webhook Veri Uç Noktası', value: heartbeat.webhook_ingest_url },
-        { label: 'Heartbeat Uç Noktası', value: heartbeat.webhook_heartbeat_url },
         {
-          label: 'Son Sinyal Yaşı',
-          value: `${heartbeat.seconds_since_last_heartbeat} sn önce (Eşik: ${heartbeat.expected_interval_minutes} dk)`,
+          label: 'Renpho Tartı',
+          value: settings.has_renpho_password ? `Bağlı (${settings.renpho_email || 'Tanımlı'})` : 'Yerel Mod',
         },
         {
-          label: 'Son 24s Heartbeat / Kayıt',
-          value: `${heartbeat.total_heartbeats_24h} sinyal / ${heartbeat.total_records_ingested_24h} kayıt`,
+          label: 'Garmin Bileklik',
+          value: settings.has_garmin_password ? `Bağlı (${settings.garmin_email || 'Tanımlı'})` : 'Yerel Mod',
         },
         {
-          label: 'Renpho ES-26BB-B Bulut',
-          value: settings.has_renpho_password ? `Aktif (${settings.renpho_email || 'Tanımlı'})` : 'BLE / Yerel Mod',
-        },
-        {
-          label: 'Garmin Connect Bulut',
-          value: settings.has_garmin_password ? `Aktif (${settings.garmin_email || 'Tanımlı'})` : 'Köprü / Yerel Mod',
+          label: 'Senkronizasyon Sıklığı',
+          value: `${settings.auto_sync_interval_minutes || 60} dk`,
         },
       ]}
     >
@@ -266,93 +255,84 @@ export function SettingsScreen({
 
       <div className="hs-grid-2">
         <Panel
-          title="1. Renpho ES-26BB-B Akıllı Tartı"
+          title="Renpho Akıllı Tartı"
           actions={<Tag tone={renphoTagTone} label={renphoTagLabel} />}
         >
-          <p className="hs-page-subtitle">
-            Renpho Health mobil uygulama hesabınızı girin. 13 vücut kompozisyonu metriği buluttan otomatik çekilir.
-          </p>
           <Input
-            label="Renpho E-posta Adresi"
+            label="E-posta Adresi"
             value={formState.renpho_email}
             placeholder="ornek@eposta.com"
             onChange={(val) => setFormState({ ...formState, renpho_email: val })}
             testId="input-renpho-email"
           />
           <Input
-            label={`Renpho Parolası (Durum: ${settings.renpho_password_masked})`}
+            label={`Parola (${settings.renpho_password_masked})`}
             type="password"
             value={formState.renpho_password}
-            placeholder="Yeni parola girin veya korumak için boş bırakın"
+            placeholder="Değiştirmek için yeni parola girin"
             onChange={(val) => setFormState({ ...formState, renpho_password: val })}
             testId="input-renpho-password"
           />
           <div className="hs-filter-bar">
             <Button variant="primary" onPress={() => handleSaveSettings('renpho')} testId="save-renpho-btn">
               <Icon name="save" />
-              <span>Renpho Ayarlarını Kaydet</span>
+              <span>Kaydet</span>
             </Button>
           </div>
         </Panel>
 
         <Panel
-          title="2. Garmin Smart Band (Garmin Connect)"
+          title="Garmin Bileklik"
           actions={<Tag tone={garminTagTone} label={garminTagLabel} />}
         >
-          <p className="hs-page-subtitle">
-            Garmin Connect hesabınızı girin. Uyku evreleri, Body Battery, stres, dinlenik nabız ve HRV otomatik çekilir.
-          </p>
           <Input
-            label="Garmin Connect E-posta Adresi"
+            label="E-posta Adresi"
             value={formState.garmin_email}
             placeholder="ornek@eposta.com"
             onChange={(val) => setFormState({ ...formState, garmin_email: val })}
             testId="input-garmin-email"
           />
           <Input
-            label={`Garmin Connect Parolası (Durum: ${settings.garmin_password_masked})`}
+            label={`Parola (${settings.garmin_password_masked})`}
             type="password"
             value={formState.garmin_password}
-            placeholder="Yeni parola girin veya korumak için boş bırakın"
+            placeholder="Değiştirmek için yeni parola girin"
             onChange={(val) => setFormState({ ...formState, garmin_password: val })}
             testId="input-garmin-password"
           />
           <div className="hs-filter-bar">
             <Button variant="primary" onPress={() => handleSaveSettings('garmin')} testId="save-garmin-btn">
               <Icon name="save" />
-              <span>Garmin Ayarlarını Kaydet</span>
+              <span>Kaydet</span>
             </Button>
           </div>
         </Panel>
 
         <Panel
-          title="3. Samsung Galaxy Watch6 (Health Connect)"
+          title="Galaxy Watch6 (Health Connect)"
           actions={
             <Tag
               tone={isHealthy ? 'nominal' : 'neutral'}
-              label={isHealthy ? 'Webhook Canlı' : 'Sinyal Bekleniyor'}
+              label={isHealthy ? 'Bağlantı Aktif' : 'Bekleniyor'}
             />
           }
         >
-          <p className="hs-page-subtitle">
-            Telefonunuzdan gelen Health Connect Webhook doğrulama anahtarı, dışa aktarım klasörü ve heartbeat eşiği.
-          </p>
           <Input
-            label="Watch6 Yedek Klasörü (WATCH_EXPORT_DIR)"
+            label="Google Drive Bağlantısı veya Klasör"
             value={formState.watch_export_dir}
             onChange={(val) => setFormState({ ...formState, watch_export_dir: val })}
             testId="input-watch-export-dir"
           />
           <Input
-            label={`Webhook Güvenlik Anahtarı / Token (Durum: ${settings.webhook_secret_masked})`}
+            label={`Güvenlik Anahtarı (${settings.webhook_secret_masked})`}
             type="password"
             value={formState.webhook_secret}
-            placeholder="Opsiyonel paylaşımlı webhook anahtarı"
+            placeholder="Opsiyonel güvenlik anahtarı"
             onChange={(val) => setFormState({ ...formState, webhook_secret: val })}
             testId="input-webhook-secret"
           />
           <Input
-            label="Beklenen Webhook Heartbeat Eşiği (Dakika)"
+            label="Kontrol Sıklığı (Dakika)"
             value={formState.webhook_expected_interval_minutes}
             onChange={(val) => setFormState({ ...formState, webhook_expected_interval_minutes: val })}
             error={intervalError}
@@ -361,33 +341,30 @@ export function SettingsScreen({
           <div className="hs-filter-bar">
             <Button variant="primary" onPress={() => handleSaveSettings('watch6')} testId="save-watch6-btn">
               <Icon name="save" />
-              <span>Watch6 Ayarlarını Kaydet</span>
+              <span>Kaydet</span>
             </Button>
           </div>
         </Panel>
 
         <Panel
-          title="4. Gemini AI Danışman ve Otomasyon Periyodu"
+          title="Yapay Zeka ve Otomatik Çekim"
           actions={
             <Tag
               tone={settings.has_gemini_api_key ? 'nominal' : 'neutral'}
-              label={settings.has_gemini_api_key ? 'Gemini API Aktif' : 'Klinik Motor Modu'}
+              label={settings.has_gemini_api_key ? 'Gemini Aktif' : 'Standart Mod'}
             />
           }
         >
-          <p className="hs-page-subtitle">
-            Çoklu cihaz yapay zekâ analizi için Gemini API anahtarı ve arka plan otomatik senkronizasyon sıklığı.
-          </p>
           <Input
-            label={`Gemini AI API Anahtarı (Durum: ${settings.gemini_api_key_masked})`}
+            label={`Gemini API Anahtarı (${settings.gemini_api_key_masked})`}
             type="password"
             value={formState.gemini_api_key}
-            placeholder="AIza... (Boş bırakılırsa deterministik klinik motor çalışır)"
+            placeholder="AIza..."
             onChange={(val) => setFormState({ ...formState, gemini_api_key: val })}
             testId="input-gemini-key"
           />
           <Input
-            label="Otomatik Bulut Senkronizasyon Sıklığı (Dakika)"
+            label="Otomatik Senkronizasyon Sıklığı (Dakika)"
             value={formState.auto_sync_interval_minutes}
             onChange={(val) => setFormState({ ...formState, auto_sync_interval_minutes: val })}
             error={intervalError}
@@ -396,26 +373,22 @@ export function SettingsScreen({
           <div className="hs-filter-bar">
             <Button variant="primary" onPress={() => handleSaveSettings()} testId="save-ai-btn">
               <Icon name="save" />
-              <span>AI ve Otomasyon Ayarlarını Kaydet</span>
-            </Button>
-            <Button variant="default" onPress={loadSettingsAndHeartbeat}>
-              <span>Değişiklikleri Geri Al</span>
+              <span>Kaydet</span>
             </Button>
           </div>
         </Panel>
       </div>
 
       <Table
-        title="Cihaz Bazlı Webhook ve Köprü Canlılık (Heartbeat) Durumu"
+        title="Cihaz Bağlantı Durumu"
         rowKey="source"
         data={heartbeat.sources || []}
-        emptyMessage="Henüz kayıtlı cihaz kaynağı bulunamadı."
+        emptyMessage="Henüz kayıtlı cihaz bulunamadı."
         columns={[
-          { key: 'source', header: 'Kaynak Kodu' },
-          { key: 'device_label', header: 'Cihaz / Köprü Adı' },
+          { key: 'device_label', header: 'Cihaz' },
           {
             key: 'status',
-            header: 'Heartbeat Durumu',
+            header: 'Durum',
             render: (row) => (
               <Tag
                 tone={
@@ -429,52 +402,20 @@ export function SettingsScreen({
                 }
                 label={
                   row.status === 'healthy'
-                    ? 'CANLI'
+                    ? 'BAĞLI'
                     : row.status === 'degraded'
-                      ? 'BAĞLANTI HATASI'
+                      ? 'HATA'
                       : row.status === 'stale'
-                        ? 'GECİKMELİ'
+                        ? 'BEKLEMEDE'
                         : 'BEKLENİYOR'
                 }
               />
             ),
           },
-          { key: 'last_seen_at', header: 'Son Sinyal Zamanı (UTC)' },
-          { key: 'last_latency_ms', header: 'Gecikme (ms)', numeric: true },
-          { key: 'event_count', header: 'Sinyal Sayısı', numeric: true },
-          { key: 'last_payload_summary', header: 'Son Sinyal Özeti' },
+          { key: 'last_seen_at', header: 'Son Güncelleme' },
+          { key: 'last_payload_summary', header: 'Son İşlem' },
         ]}
       />
-
-      <Table
-        title="Son Webhook ve Heartbeat Sinyal Geçmişi"
-        rowKey="id"
-        data={heartbeat.recent_heartbeats || []}
-        emptyMessage="Henüz kaydedilmiş webhook heartbeat olayı bulunmuyor."
-        columns={[
-          { key: 'created_at', header: 'Zaman (UTC)' },
-          { key: 'source', header: 'Kaynak' },
-          { key: 'device_label', header: 'Cihaz' },
-          { key: 'event_type', header: 'Olay Türü' },
-          { key: 'records_received', header: 'Kayıt', numeric: true },
-          { key: 'latency_ms', header: 'Gecikme (ms)', numeric: true },
-          {
-            key: 'status',
-            header: 'Durum',
-            render: (row) => (
-              <Tag
-                tone={row.status === 'healthy' ? 'nominal' : 'warning'}
-                label={row.status === 'healthy' ? 'SAĞLIKLI' : 'UYARI'}
-              />
-            ),
-          },
-          { key: 'payload_summary', header: 'Yük / Sinyal Özeti' },
-        ]}
-      />
-
-      <Panel title="Telefon Otomasyonu (Health Connect / Tasker / MacroDroid) Heartbeat Örneği">
-        <CodeBlock content={curlSnippet} />
-      </Panel>
     </DetailTemplate>
   );
 }

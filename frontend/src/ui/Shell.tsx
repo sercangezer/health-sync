@@ -9,12 +9,13 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { id: 'dashboard', label: 'Gösterge paneli', icon: 'dashboard' },
-  { id: 'scale', label: 'Tartı ve kompozisyon', icon: 'monitor_weight' },
-  { id: 'insights', label: 'Anlamlandırma ve korelasyon', icon: 'analytics' },
-  { id: 'wearables', label: 'Watch6 ve Garmin kıyaslama', icon: 'watch' },
-  { id: 'ai', label: 'AI danışman ve otomasyon', icon: 'psychology' },
-  { id: 'settings', label: 'Ayarlar ve heartbeat', icon: 'settings' },
+  { id: 'dashboard', label: 'Özet', icon: 'dashboard' },
+  { id: 'profile', label: 'Profilim', icon: 'person' },
+  { id: 'scale', label: 'Tartı', icon: 'monitor_weight' },
+  { id: 'insights', label: 'Analiz', icon: 'analytics' },
+  { id: 'wearables', label: 'Cihazlar', icon: 'watch' },
+  { id: 'ai', label: 'Yapay Zeka', icon: 'psychology' },
+  { id: 'settings', label: 'Ayarlar', icon: 'settings' },
 ];
 
 export function Shell({
@@ -118,7 +119,7 @@ export function Shell({
           <div className="hs-topbar-actions">
             <Tag
               tone={healthStatus === 'healthy' ? 'nominal' : 'warning'}
-              label={healthStatus === 'healthy' ? '8 Mikroservis Aktif' : 'Kısmi Servis Koruması'}
+              label={healthStatus === 'healthy' ? 'Bağlantılar Aktif' : 'Kontrol Gerekli'}
             />
             <Button
               variant="default"
@@ -127,14 +128,14 @@ export function Shell({
               testId="theme-toggle"
             >
               <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} />
-              <span>{theme === 'dark' ? 'Açık tema' : 'Koyu tema'}</span>
+              <span>{theme === 'dark' ? 'Açık' : 'Koyu'}</span>
             </Button>
-            <Menu label="Cihaz profili" icon="account_circle">
+            <Menu label="Cihazlarım" icon="account_circle">
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-1)' }}>
-                <strong>Aktif Cihaz Envanteri</strong>
-                <span>1. Renpho ES-26BB-B (BLE + Cloud)</span>
-                <span>2. Samsung Galaxy Watch6 (HC)</span>
-                <span>3. Garmin Smart Band (Connect)</span>
+                <strong>Bağlı Cihazlar</strong>
+                <span>• Renpho Akıllı Tartı</span>
+                <span>• Samsung Galaxy Watch6</span>
+                <span>• Garmin Akıllı Bileklik</span>
               </div>
             </Menu>
           </div>
@@ -143,14 +144,14 @@ export function Shell({
         <main className="hs-content">{children}</main>
 
         <footer className="hs-footer">
-          <span>Çoklu Cihaz Telemetri ve Biyometrik Anlamlandırma Sistemi</span>
+          <span>Kişisel Sağlık ve Vücut Takip Asistanı</span>
           <button
             type="button"
             className="hs-footer-version-btn"
             onClick={() => setChangelogOpen(true)}
             data-testid="footer-version-btn"
           >
-            {`Version: v${versionInfo.version} | Commit: ${versionInfo.commit}`}
+            {`v${versionInfo.version}`}
           </button>
         </footer>
       </div>

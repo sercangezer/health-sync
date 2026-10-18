@@ -13,11 +13,12 @@ MIGRATIONS = [
     ("0002", "seed_default_reconciliation_and_baseline_telemetry"),
     ("0003", "create_integration_settings_and_webhook_heartbeats"),
     ("0004", "purge_initial_dummy_seed_telemetry"),
+    ("0005", "create_user_profiles_table"),
 ]
 
 
 def ensure_default_config_and_seed(db: Session) -> None:
-    """Ensures default reconciliation rules and integration settings exist without inserting dummy telemetry."""
+    """Ensures default reconciliation rules, user profile, and integration settings exist."""
     cfg = db.query(models.ReconciliationConfig).filter(models.ReconciliationConfig.id == 1).first()
     start_day = date.today() - timedelta(days=30)
 
@@ -34,6 +35,24 @@ def ensure_default_config_and_seed(db: Session) -> None:
             height_cm=178.0,
         )
         db.add(cfg)
+        db.commit()
+
+    prof = db.query(models.UserProfile).filter(models.UserProfile.id == 1).first()
+    if not prof:
+        prof = models.UserProfile(
+            id=1,
+            full_name="",
+            birth_date="1990-01-01",
+            gender="male",
+            blood_type="Bilinmiyor",
+            starting_weight_kg=85.0,
+            activity_level="moderate",
+            surgeries="",
+            chronic_conditions="",
+            medications="",
+            allergies_and_notes="",
+        )
+        db.add(prof)
         db.commit()
 
     int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()

@@ -174,3 +174,23 @@ class WebhookHeartbeat(Base):
     payload_summary = Column(String(512), default="", nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
 
+
+class UserProfile(Base):
+    """Stores personal demographics, body targets, surgeries, chronic conditions, and medical notes."""
+
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(128), default="", nullable=False)
+    birth_date = Column(String(10), default="1990-01-01", nullable=False)
+    gender = Column(String(24), default="male", nullable=False)
+    blood_type = Column(String(16), default="Bilinmiyor", nullable=False)
+    starting_weight_kg = Column(Float, default=85.0, nullable=False)
+    activity_level = Column(String(32), default="moderate", nullable=False)
+    surgeries = Column(Text, default="", nullable=False)
+    chronic_conditions = Column(Text, default="", nullable=False)
+    medications = Column(Text, default="", nullable=False)
+    allergies_and_notes = Column(Text, default="", nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
