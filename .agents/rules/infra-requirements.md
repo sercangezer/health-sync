@@ -139,3 +139,14 @@
   - the frontend references an operation that is not in the contract.
 - **Pre-Commit Parity Report:** Before every commit, list each endpoint touched as a table: `Endpoint | Backend handler | Backend test | Frontend consumer`. Any empty cell blocks the commit, unless the endpoint is marked `x-internal`.
 - **Field-Level Parity:** When a request/response field is added, renamed, or removed, the contract, the backend, and every frontend consumer MUST be updated in the same commit. Frontend type-checking must pass against the regenerated client.
+
+## 8. Kalıcı Git, Self-Hosted CI/CD ve PR Birleştirme Kuralları (Permanent Rules)
+1. **Ayrı Dal (Branch) Zorunluluğu:** Her çalışma ve geliştirme için mutlaka `master` (veya `main`) dalından ayrı bir özellik/geliştirme dalı (`gelistirme/...`, `feat/...`, `fix/...`, `chore/...`) açılır. Doğrudan `master` dalına commit veya push yapılması KESİNLİKLE YASAKTIR.
+2. **GitHub Actions & Self-Hosted Runner Zorunluluğu:** Tüm projelerde GitHub Actions iş akışı (`.github/workflows/ci.yml`) kullanılır ve işler `runs-on: [self-hosted, linux, x64]` (self-hosted runner) üzerinde çalıştırılır.
+3. **Push Öncesi Yerel Doğrulama:** Dal push edilmeden ve PR açılmadan önce yerelde tüm doğrulama kapıları (`make check`: `make lint`, `make contract-check`, `make ui-check`, `make test`) %100 hatasız geçmelidir.
+4. **PR %100 Yeşil Olmadan Merge ve Auto-Merge Yasağı:**
+   - `gh pr merge --auto` (PR automerge) kullanılması KESİNLİKLE YASAKTIR.
+   - PR açıldıktan sonra (`gh pr create --base master --head <dal>`) mutlaka `gh pr checks <PR_NO> --watch` ile self-hosted runner üzerindeki tüm GitHub Actions kontrollerinin tamamlanması beklenir.
+   - PR üzerindeki tüm CI kontrolleri %100 BAŞARILI (yeşil / `pass`) olmadan ASLA `master` dalına merge yapılmaz. Herhangi bir adım başarısız olursa veya hâlâ çalışıyorsa merge işlemi kesinlikle durdurulur, hata giderilip tekrar CI'ın %100 yeşil olması beklenir.
+5. **Merge Sonrası Master CI Doğrulaması:** PR %100 yeşil olup `gh pr merge <PR_NO> --merge --delete-branch` ile birleştirildikten sonra `master` dalında tetiklenen `push` workflow koşusu da `gh run watch` ile izlenir ve %100 yeşil tamamlandığı doğrulanır.
+6. **Yerel Senkronizasyon ve Canlı Dağıtım:** `master` CI koşusu %100 yeşil tamamlandıktan sonra yerel depo `git checkout master && git pull origin master` ile güncellenir ve canlı ortam dağıtımı (`make deploy`) yalnızca doğrulanmış `master` dalından yapılır.
