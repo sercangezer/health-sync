@@ -156,6 +156,25 @@ export function Shell({
         </footer>
       </div>
 
+      <nav className="hs-bottom-nav" aria-label="Mobil alt gezinme">
+        {NAV_ITEMS.map((item) => {
+          const isActive = item.id === activeTab;
+          return (
+            <button
+              key={`bottom-${item.id}`}
+              type="button"
+              onClick={() => onSelectTab(item.id)}
+              className={isActive ? 'hs-bottom-nav-item hs-bottom-nav-item-active' : 'hs-bottom-nav-item'}
+              aria-current={isActive ? 'page' : undefined}
+              title={item.label}
+            >
+              <Icon name={item.icon} />
+              <span className="hs-bottom-nav-label">{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
       <Modal
         isOpen={changelogOpen}
         title={`Sürüm Notları — v${versionInfo.version} (${versionInfo.commit})`}
