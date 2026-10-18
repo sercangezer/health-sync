@@ -11,7 +11,9 @@ app = FastAPI(title="Garmin Smart Band Sync Microservice", version="1.0.0")
 logger = attach_standard_middleware_and_handlers(app, "garmin-sync-service")
 
 
-def upsert_garmin_daily_records(db: Session, records: List[Dict[str, Any]]) -> int:
+def upsert_garmin_daily_records(
+    db: Session, records: List[Dict[str, Any]], emit_log: bool = True
+) -> int:
     if not records:
         raise HTTPException(status_code=400, detail="Garmin veri listesi boş olamaz.")
 
@@ -73,25 +75,26 @@ def upsert_garmin_daily_records(db: Session, records: List[Dict[str, Any]]) -> i
         existing.updated_at = datetime.now(timezone.utc)
         count += 1
 
-    db.add(
-        models.SyncLog(
-            provider="garmin",
-            status="nominal",
-            records_processed=count,
-            message=f"Garmin Smart Band kaynağından {count} günlük kayıt işlendi.",
+    if emit_log:
+        db.add(
+            models.SyncLog(
+                provider="garmin",
+                status="nominal",
+                records_processed=count,
+                message=f"Garmin Smart Band kaynağından {count} günlük kayıt işlendi.",
+            )
         )
-    )
-    db.add(
-        models.WebhookHeartbeat(
-            source="garmin_band",
-            device_label="Garmin Smart Band (Connect Bridge)",
-            event_type="webhook_ingest",
-            status="healthy",
-            records_received=count,
-            latency_ms=1.7,
-            payload_summary=f"Garmin Smart Band üzerinden {count} günlük kayıt alındı.",
+        db.add(
+            models.WebhookHeartbeat(
+                source="garmin_band",
+                device_label="Garmin Smart Band (Connect Bridge)",
+                event_type="webhook_ingest",
+                status="healthy",
+                records_received=count,
+                latency_ms=1.7,
+                payload_summary=f"Garmin Smart Band üzerinden {count} günlük kayıt alındı.",
+            )
         )
-    )
     db.commit()
     return count
 
@@ -165,7 +168,7 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
                 }
             )
         if batch:
-            synced = upsert_garmin_daily_records(db, batch)
+            synced = upsert_garmin_daily_records(db, batch, emit_log=False)
     except Exception as exc:
         logger.warning(f"Garmin Connect cloud sync failed: {exc}")
         err_msg = f"Garmin Connect bağlantısı başarısız: {exc}"
@@ -175,6 +178,17 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
                 status="degraded",
                 records_processed=0,
                 message=err_msg,
+            )
+        )
+        db.add(
+            models.WebhookHeartbeat(
+                source="garmin_band",
+                device_label="Garmin Smart Band (Connect Bridge)",
+                event_type="cloud_sync",
+                status="degraded",
+                records_received=0,
+                latency_ms=0.0,
+                payload_summary=err_msg,
             )
         )
         db.commit()

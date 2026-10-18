@@ -34,7 +34,10 @@ def compute_es26bb_metrics_from_ble(payload: Dict[str, Any], height_cm: float = 
         float(payload.get("body_fat_pct") or max(6.0, min(55.0, (1.20 * bmi) + 0.23 * 34 - 16.2 + impedance_factor))),
         2,
     )
-    fat_free_weight_kg = round(weight_kg * (1.0 - (body_fat_pct / 100.0)), 2)
+    fat_free_weight_kg = round(
+        float(payload.get("fat_free_weight_kg") or round(weight_kg * (1.0 - (body_fat_pct / 100.0)), 2)),
+        2,
+    )
     muscle_mass_kg = round(
         float(payload.get("muscle_mass_kg") or round(fat_free_weight_kg * 0.948, 2)),
         2,
@@ -77,7 +80,9 @@ def compute_es26bb_metrics_from_ble(payload: Dict[str, Any], height_cm: float = 
     }
 
 
-def upsert_scale_measurement(db: Session, payload: Dict[str, Any]) -> models.ScaleMeasurement:
+def upsert_scale_measurement(
+    db: Session, payload: Dict[str, Any], emit_log: bool = True
+) -> models.ScaleMeasurement:
     cfg = db.query(models.ReconciliationConfig).filter(models.ReconciliationConfig.id == 1).first()
     height_cm = cfg.height_cm if cfg else 178.0
     normalized = compute_es26bb_metrics_from_ble(payload, height_cm=height_cm)
@@ -96,25 +101,26 @@ def upsert_scale_measurement(db: Session, payload: Dict[str, Any]) -> models.Sca
 
     record = models.ScaleMeasurement(**normalized)
     db.add(record)
-    db.add(
-        models.SyncLog(
-            provider="renpho",
-            status="nominal",
-            records_processed=1,
-            message=f"Renpho ES-26BB-B ölçümü kaydedildi ({normalized['weight_kg']} kg, kaynak: {normalized['source']}).",
+    if emit_log:
+        db.add(
+            models.SyncLog(
+                provider="renpho",
+                status="nominal",
+                records_processed=1,
+                message=f"Renpho ES-26BB-B ölçümü kaydedildi ({normalized['weight_kg']} kg, kaynak: {normalized['source']}).",
+            )
         )
-    )
-    db.add(
-        models.WebhookHeartbeat(
-            source="renpho_es26bb",
-            device_label="Renpho Body Fat Scale ES-26BB-B",
-            event_type="ble_ingest" if "ble" in str(normalized["source"]) else "cloud_sync",
-            status="healthy",
-            records_received=1,
-            latency_ms=1.2,
-            payload_summary=f"Renpho ES-26BB-B ölçümü ({normalized['weight_kg']} kg) alındı.",
+        db.add(
+            models.WebhookHeartbeat(
+                source="renpho_es26bb",
+                device_label="Renpho Body Fat Scale ES-26BB-B",
+                event_type="ble_ingest" if "ble" in str(normalized["source"]) else "cloud_sync",
+                status="healthy",
+                records_received=1,
+                latency_ms=1.2,
+                payload_summary=f"Renpho ES-26BB-B ölçümü ({normalized['weight_kg']} kg) alındı.",
+            )
         )
-    )
     db.commit()
     db.refresh(record)
     return record
@@ -168,7 +174,7 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
                     "source": "renpho_es26bb",
                     "weight_kg": m.get("weight"),
                     "body_fat_pct": m.get("bodyfat"),
-                    "muscle_mass_kg": m.get("muscle"),
+                    "muscle_mass_kg": m.get("sinew") or m.get("muscle"),
                     "bone_mass_kg": m.get("bone"),
                     "water_pct": m.get("water"),
                     "subcutaneous_fat_pct": m.get("subfat"),
@@ -179,6 +185,7 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
                     "fat_free_weight_kg": m.get("fatFreeWeight"),
                     "sinew_mass_kg": m.get("sinew"),
                 },
+                emit_log=False,
             )
             added += 1
     except Exception as exc:
@@ -190,6 +197,17 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
                 status="degraded",
                 records_processed=0,
                 message=err_msg,
+            )
+        )
+        db.add(
+            models.WebhookHeartbeat(
+                source="renpho_es26bb",
+                device_label="Renpho Body Fat Scale ES-26BB-B",
+                event_type="cloud_sync",
+                status="degraded",
+                records_received=0,
+                latency_ms=0.0,
+                payload_summary=err_msg,
             )
         )
         db.commit()
