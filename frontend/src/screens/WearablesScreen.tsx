@@ -195,18 +195,6 @@ export function WearablesScreen({
           onChange={(val) => setRules({ ...rules, cycle_start_date: val })}
           error={cycleDateError}
         />
-
-        <Input
-          label="Hedef Kilo (kg)"
-          value={String(rules.target_weight_kg || '')}
-          onChange={(val) => setRules({ ...rules, target_weight_kg: val })}
-        />
-
-        <Input
-          label="Boy (cm)"
-          value={String(rules.height_cm || '')}
-          onChange={(val) => setRules({ ...rules, height_cm: val })}
-        />
       </FormTemplate>
     </DetailTemplate>
   );

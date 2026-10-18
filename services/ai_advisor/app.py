@@ -17,6 +17,7 @@ VALID_FOCUS_AREAS = {"holistic", "body_composition", "recovery_sleep", "wearable
 
 def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     cfg = get_or_create_config(db)
+    prof = getattr(cfg, "_profile", None)
     insights = build_analytics_insights(db, range_key="30d")
     comparison = build_wearables_comparison(db, days=14)
     scale_rows = (
@@ -50,13 +51,26 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     comp_q = insights.get("composition_quality", {})
     comp_sum = comparison.get("summary", {})
 
+    gender_label = "Erkek" if (getattr(prof, "gender", "male") if prof else "male") == "male" else "Kadın"
+    birth_date = getattr(prof, "birth_date", "1990-01-01") if prof else "1990-01-01"
+    surgeries = (getattr(prof, "surgeries", "") if prof else "") or "Belirtilmedi"
+    chronic = (getattr(prof, "chronic_conditions", "") if prof else "") or "Belirtilmedi"
+    meds = (getattr(prof, "medications", "") if prof else "") or "Belirtilmedi"
+    allergies = (getattr(prof, "allergies_and_notes", "") if prof else "") or "Belirtilmedi"
+    start_w = getattr(prof, "starting_weight_kg", 85.0) if prof else 85.0
+
     prompt_text = (
         "# Çoklu Cihaz Biyometrik ve Metabolik Değerlendirme İsteği\n\n"
         "Aşağıda **Renpho ES-26BB-B** akıllı tartı, **Samsung Galaxy Watch6** ve **Garmin Smart Band** "
         "cihazlarımdan otomatik toplanıp öncelik kurallarıyla birleştirilmiş güncel sağlık verilerim yer almaktadır.\n\n"
-        f"## 1. Takip Döngüsü ve Hedef Parametreler\n"
+        f"## 1. Kişisel Profil, Tıbbi Geçmiş ve Hedefler\n"
+        f"- Doğum Tarihi: {birth_date} | Cinsiyet: {gender_label}\n"
+        f"- Boy: {cfg.height_cm} cm | Başlangıç Kilosu: {start_w} kg | Hedef Kilo: {cfg.target_weight_kg} kg\n"
+        f"- Geçirilen Ameliyatlar: {surgeries}\n"
+        f"- Kronik Rahatsızlıklar: {chronic}\n"
+        f"- İlaç ve Takviyeler: {meds}\n"
+        f"- Beslenme Notları / Alerjiler: {allergies}\n"
         f"- Döngü Başlangıç Tarihi: {cfg.cycle_start_date}\n"
-        f"- Boy: {cfg.height_cm} cm | Hedef Kilo: {cfg.target_weight_kg} kg\n"
         f"- Güncel Toparlanma Skoru: {insights.get('recovery_score', 0)}/100 ({insights.get('recovery_status')})\n"
         f"- Kilo Değişim Kalitesi: {comp_q.get('headline')} "
         f"(Toplam: {comp_q.get('total_weight_delta_kg')} kg, Yağ: {comp_q.get('fat_mass_delta_kg')} kg, "
@@ -73,7 +87,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
         f"## 5. Tespit Edilen Biyometrik Anomaliler\n"
         f"{anom_block}\n\n"
         "## Beklenen Analiz\n"
-        "1. Yağ kaybı hızımı ve kas kütlesi korunumumu değerlendir.\n"
+        "1. Kişisel profilimi ve geçirdiğim ameliyatları/tıbbi geçmişimi dikkate alarak yağ kaybı hızımı ve kas kütlesi korunumumu değerlendir.\n"
         "2. Garmin uyku/stres/Body Battery ve Galaxy Watch6 HRV/nabız verilerime göre toparlanma kalitemi yorumla.\n"
         "3. Önümüzdeki 7 gün için beslenme, hidrasyon, uyku ve antrenman yoğunluğu önerilerini maddeler halinde sun."
     )

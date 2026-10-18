@@ -262,12 +262,29 @@ def test_reconciliation_rules_and_section6_temporal_window_guard():
     assert rules_res.status_code == 200
     rules = rules_res.json()
     assert rules["merge_strategy"] == "priority"
+    assert "birth_date" in rules
+    assert "gender" in rules
+    assert "surgeries" in rules
 
-    # Switch merge strategy to 'average' and verify reconciliation updates
+    # Switch merge strategy to 'average' and update personal medical profile
     rules["merge_strategy"] = "average"
+    rules["full_name"] = "Sercan Gezer"
+    rules["birth_date"] = "1991-06-15"
+    rules["gender"] = "male"
+    rules["blood_type"] = "A Rh+"
+    rules["starting_weight_kg"] = 86.5
+    rules["surgeries"] = "Safra kesesi ameliyatı (2022)"
+    rules["chronic_conditions"] = "İnsülin direnci"
+    rules["medications"] = "D3K2, Magnezyum"
+    rules["allergies_and_notes"] = "Yüksek protein, şekersiz beslenme"
     upd = client.put("/api/reconciliation/rules", json=rules)
     assert upd.status_code == 200
-    assert upd.json()["merge_strategy"] == "average"
+    upd_body = upd.json()
+    assert upd_body["merge_strategy"] == "average"
+    assert upd_body["full_name"] == "Sercan Gezer"
+    assert upd_body["birth_date"] == "1991-06-15"
+    assert upd_body["surgeries"] == "Safra kesesi ameliyatı (2022)"
+    assert upd_body["chronic_conditions"] == "İnsülin direnci"
 
     # Section 6 Temporal Baseline & Window Fallback Guard:
     # Setting cycle_start_date in the future must NOT bleed old measurements into the new cycle!

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AiScreen } from './screens/AiScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
+import { ProfileScreen } from './screens/ProfileScreen';
 import { ScaleScreen } from './screens/ScaleScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { UIGalleryScreen } from './screens/UIGalleryScreen';
@@ -56,6 +57,7 @@ export function App() {
       {activeTab === 'dashboard' ? (
         <DashboardScreen onNavigateTab={setActiveTab} forcedState={forcedState} />
       ) : null}
+      {activeTab === 'profile' ? <ProfileScreen forcedState={forcedState} /> : null}
       {activeTab === 'scale' ? <ScaleScreen forcedState={forcedState} /> : null}
       {activeTab === 'insights' ? <InsightsScreen forcedState={forcedState} /> : null}
       {activeTab === 'wearables' ? <WearablesScreen forcedState={forcedState} /> : null}

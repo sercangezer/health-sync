@@ -15,13 +15,32 @@ VALID_SOURCES = {"renpho_es26bb", "galaxy_watch6", "garmin_band"}
 VALID_STRATEGIES = {"priority", "average", "max"}
 
 
+def get_or_create_profile(db: Session) -> models.UserProfile:
+    ensure_default_config_and_seed(db)
+    prof = db.query(models.UserProfile).filter(models.UserProfile.id == 1).first()
+    return prof
+
+
 def get_or_create_config(db: Session) -> models.ReconciliationConfig:
     ensure_default_config_and_seed(db)
     cfg = db.query(models.ReconciliationConfig).filter(models.ReconciliationConfig.id == 1).first()
+    prof = db.query(models.UserProfile).filter(models.UserProfile.id == 1).first()
+    setattr(cfg, "_profile", prof)
     return cfg
 
 
+def _calculate_age(birth_date_str: str) -> int:
+    try:
+        bd = datetime.strptime(str(birth_date_str or "1990-01-01").strip()[:10], "%Y-%m-%d").date()
+        today = datetime.now(timezone.utc).date()
+        return max(1, today.year - bd.year - ((today.month, today.day) < (bd.month, bd.day)))
+    except Exception:
+        return 35
+
+
 def serialize_config(cfg: models.ReconciliationConfig) -> Dict[str, Any]:
+    prof = getattr(cfg, "_profile", None)
+    birth_date = getattr(prof, "birth_date", "1990-01-01") if prof else "1990-01-01"
     return {
         "weight_priority": json.loads(cfg.weight_priority_json),
         "sleep_priority": json.loads(cfg.sleep_priority_json),
@@ -31,20 +50,32 @@ def serialize_config(cfg: models.ReconciliationConfig) -> Dict[str, Any]:
         "cycle_start_date": cfg.cycle_start_date,
         "target_weight_kg": cfg.target_weight_kg,
         "height_cm": cfg.height_cm,
+        "full_name": getattr(prof, "full_name", "") if prof else "",
+        "birth_date": birth_date,
+        "age": _calculate_age(birth_date),
+        "gender": getattr(prof, "gender", "male") if prof else "male",
+        "blood_type": getattr(prof, "blood_type", "Bilinmiyor") if prof else "Bilinmiyor",
+        "starting_weight_kg": getattr(prof, "starting_weight_kg", 85.0) if prof else 85.0,
+        "activity_level": getattr(prof, "activity_level", "moderate") if prof else "moderate",
+        "surgeries": getattr(prof, "surgeries", "") if prof else "",
+        "chronic_conditions": getattr(prof, "chronic_conditions", "") if prof else "",
+        "medications": getattr(prof, "medications", "") if prof else "",
+        "allergies_and_notes": getattr(prof, "allergies_and_notes", "") if prof else "",
     }
 
 
 def update_config(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
     cfg = get_or_create_config(db)
+    prof = get_or_create_profile(db)
 
-    strategy = str(payload.get("merge_strategy") or "priority").strip()
+    strategy = str(payload.get("merge_strategy") or cfg.merge_strategy or "priority").strip()
     if strategy not in VALID_STRATEGIES:
         raise HTTPException(
             status_code=400,
             detail=f"Geçersiz birleştirme stratejisi: '{strategy}'. Geçerli değerler: priority, average, max.",
         )
 
-    cycle_start = str(payload.get("cycle_start_date") or "").strip()
+    cycle_start = str(payload["cycle_start_date"] if "cycle_start_date" in payload else cfg.cycle_start_date).strip()
     try:
         datetime.strptime(cycle_start, "%Y-%m-%d")
     except ValueError as exc:
@@ -53,30 +84,72 @@ def update_config(db: Session, payload: Dict[str, Any]) -> Dict[str, Any]:
             detail="Geçersiz döngü başlangıç tarihi (cycle_start_date). YYYY-MM-DD formatı zorunludur.",
         ) from exc
 
-    target_weight = float(payload.get("target_weight_kg") or 0.0)
+    target_weight = float(
+        payload["target_weight_kg"] if "target_weight_kg" in payload and payload["target_weight_kg"] is not None else cfg.target_weight_kg
+    )
     if target_weight < 35.0 or target_weight > 250.0:
         raise HTTPException(status_code=400, detail="Hedef kilo 35 kg ile 250 kg arasında olmalıdır.")
 
-    height_cm = float(payload.get("height_cm") or 0.0)
+    height_cm = float(
+        payload["height_cm"] if "height_cm" in payload and payload["height_cm"] is not None else cfg.height_cm
+    )
     if height_cm < 120.0 or height_cm > 230.0:
         raise HTTPException(status_code=400, detail="Boy (height_cm) 120 cm ile 230 cm arasında olmalıdır.")
 
-    for key in ("weight_priority", "sleep_priority", "activity_priority", "heart_priority"):
-        arr = payload.get(key)
-        if not isinstance(arr, list) or not arr or any(s not in VALID_SOURCES for s in arr):
-            raise HTTPException(status_code=400, detail=f"Geçersiz öncelik listesi: {key}")
+    for key, attr in (
+        ("weight_priority", "weight_priority_json"),
+        ("sleep_priority", "sleep_priority_json"),
+        ("activity_priority", "activity_priority_json"),
+        ("heart_priority", "heart_priority_json"),
+    ):
+        if key in payload:
+            arr = payload.get(key)
+            if not isinstance(arr, list) or not arr or any(s not in VALID_SOURCES for s in arr):
+                raise HTTPException(status_code=400, detail=f"Geçersiz öncelik listesi: {key}")
+            setattr(cfg, attr, json.dumps(arr))
 
-    cfg.weight_priority_json = json.dumps(payload["weight_priority"])
-    cfg.sleep_priority_json = json.dumps(payload["sleep_priority"])
-    cfg.activity_priority_json = json.dumps(payload["activity_priority"])
-    cfg.heart_priority_json = json.dumps(payload["heart_priority"])
     cfg.merge_strategy = strategy
     cfg.cycle_start_date = cycle_start
     cfg.target_weight_kg = round(target_weight, 2)
     cfg.height_cm = round(height_cm, 1)
     cfg.updated_at = datetime.now(timezone.utc)
+
+    if "full_name" in payload and payload["full_name"] is not None:
+        prof.full_name = str(payload["full_name"]).strip()[:128]
+    if "birth_date" in payload and payload["birth_date"] is not None:
+        bd_str = str(payload["birth_date"]).strip()
+        try:
+            datetime.strptime(bd_str, "%Y-%m-%d")
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail="Doğum tarihi YYYY-AA-GG formatında olmalıdır (Örn: 1990-05-15).",
+            ) from exc
+        prof.birth_date = bd_str
+    if "gender" in payload and payload["gender"] is not None:
+        prof.gender = str(payload["gender"]).strip()[:24]
+    if "blood_type" in payload and payload["blood_type"] is not None:
+        prof.blood_type = str(payload["blood_type"]).strip()[:16]
+    if "starting_weight_kg" in payload and payload["starting_weight_kg"] is not None:
+        sw = float(payload["starting_weight_kg"])
+        if 30.0 <= sw <= 300.0:
+            prof.starting_weight_kg = round(sw, 2)
+    if "activity_level" in payload and payload["activity_level"] is not None:
+        prof.activity_level = str(payload["activity_level"]).strip()[:32]
+    if "surgeries" in payload and payload["surgeries"] is not None:
+        prof.surgeries = str(payload["surgeries"]).strip()
+    if "chronic_conditions" in payload and payload["chronic_conditions"] is not None:
+        prof.chronic_conditions = str(payload["chronic_conditions"]).strip()
+    if "medications" in payload and payload["medications"] is not None:
+        prof.medications = str(payload["medications"]).strip()
+    if "allergies_and_notes" in payload and payload["allergies_and_notes"] is not None:
+        prof.allergies_and_notes = str(payload["allergies_and_notes"]).strip()
+    prof.updated_at = datetime.now(timezone.utc)
+
     db.commit()
     db.refresh(cfg)
+    db.refresh(prof)
+    setattr(cfg, "_profile", prof)
 
     reconcile_all_days(db)
     return serialize_config(cfg)

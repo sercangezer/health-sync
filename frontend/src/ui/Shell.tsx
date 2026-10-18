@@ -10,6 +10,7 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'Özet', icon: 'dashboard' },
+  { id: 'profile', label: 'Profilim', icon: 'person' },
   { id: 'scale', label: 'Tartı', icon: 'monitor_weight' },
   { id: 'insights', label: 'Analiz', icon: 'analytics' },
   { id: 'wearables', label: 'Cihazlar', icon: 'watch' },

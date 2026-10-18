@@ -107,6 +107,16 @@ class ReconciliationRulesUpdatePayload(BaseModel):
     cycle_start_date: str
     target_weight_kg: float
     height_cm: float
+    full_name: str | None = None
+    birth_date: str | None = None
+    gender: str | None = None
+    blood_type: str | None = None
+    starting_weight_kg: float | None = None
+    activity_level: str | None = None
+    surgeries: str | None = None
+    chronic_conditions: str | None = None
+    medications: str | None = None
+    allergies_and_notes: str | None = None
 
 
 class BulkDeletePayload(BaseModel):
@@ -279,13 +289,14 @@ def get_reconciliation_rules(db: Session = Depends(get_db)):
 
 @app.put("/api/reconciliation/rules")
 def update_reconciliation_rules(payload: ReconciliationRulesUpdatePayload, db: Session = Depends(get_db)):
+    dumped = payload.model_dump(exclude_none=True)
     return registry.call_http_or_local(
         service_name="reconciliation-service",
         base_url=os.getenv("RECONCILIATION_SERVICE_URL"),
         method="PUT",
         path="/rules",
-        json_body=payload.model_dump(),
-        local_handler=lambda: update_config(db, payload.model_dump()),
+        json_body=dumped,
+        local_handler=lambda: update_config(db, dumped),
     )
 
 
