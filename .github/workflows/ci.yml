@@ -8,24 +8,36 @@ on:
 
 jobs:
   verify:
-    name: Full-Stack Verification Gate (make check)
+    name: Full-Stack Parallel Verification Gate (make check)
     runs-on: [self-hosted, linux, x64]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          clean: false
 
-      - name: Install frontend dependencies
+      - name: Ensure frontend dependencies (fast local cache)
         working-directory: frontend
-        run: npm ci
+        run: |
+          if [ ! -d node_modules ] && [ -d /GIT/health-sync/frontend/node_modules ]; then
+            cp -al /GIT/health-sync/frontend/node_modules ./node_modules
+          elif [ ! -d node_modules ]; then
+            npm ci --prefer-offline --no-audit
+          fi
 
-      - name: Run Lint Gate (make lint)
-        run: make lint
+      - name: Run Parallel Verification Gates (lint + contract-check + test + ui-check)
+        run: |
+          set -e
+          make lint &
+          PID_LINT=$!
+          make contract-check &
+          PID_CONTRACT=$!
+          make test &
+          PID_TEST=$!
+          make ui-check &
+          PID_UI=$!
+          wait $PID_LINT
+          wait $PID_CONTRACT
+          wait $PID_TEST
+          wait $PID_UI
 
-      - name: Run OpenAPI Contract Parity Gate (make contract-check)
-        run: make contract-check
-
-      - name: Run UI Offline, Contrast, Axe & Visual Gate (make ui-check)
-        run: make ui-check
-
-      - name: Run Microservices Test Suite (make test)
-        run: make test
