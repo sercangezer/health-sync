@@ -100,40 +100,35 @@ export function WearablesScreen({
 
   return (
     <DetailTemplate
-      title="Samsung Galaxy Watch6 vs. Garmin Smart Band Yan Yana Kıyaslama"
-      statusLabel={`Sensör Uyum Skoru: %${comparison.agreement_score}`}
+      title="Saat ve Bileklik Kıyaslama"
+      statusLabel={`Uyum: %${comparison.agreement_score}`}
       statusTone={comparison.agreement_score >= 80 ? 'nominal' : 'warning'}
       kvItems={[
         { label: 'Karşılaştırılan Gün', value: `${sum.compared_days ?? 0} gün` },
-        { label: 'Ortalama Adım Farkı', value: `%${sum.avg_steps_diff_pct ?? 0}` },
-        { label: 'Ortalama Uyku Farkı', value: `${sum.avg_sleep_diff_hours ?? 0} saat` },
-        { label: 'Ortalama RHR Farkı', value: `${sum.avg_rhr_diff_bpm ?? 0} bpm` },
-        { label: 'Birleştirme Modu', value: rules.merge_strategy },
-        { label: 'Aktif Döngü Başlangıcı', value: rules.cycle_start_date },
+        { label: 'Adım Farkı', value: `%${sum.avg_steps_diff_pct ?? 0}` },
+        { label: 'Uyku Farkı', value: `${sum.avg_sleep_diff_hours ?? 0} saat` },
+        { label: 'Nabız Farkı', value: `${sum.avg_rhr_diff_bpm ?? 0} bpm` },
       ]}
     >
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
 
       <Table
-        title="Günlük Sensör Kıyaslama Tablosu (Watch6 vs. Garmin)"
+        title="Günlük Ölçüm Kıyaslaması"
         rowKey="date"
+        pageSize={7}
         data={comparison.rows || []}
-        emptyMessage="Karşılaştırılacak günlük giyilebilir cihaz kaydı bulunamadı."
+        emptyMessage="Karşılaştırılacak günlük cihaz kaydı bulunamadı."
         columns={[
           { key: 'date', header: 'Tarih' },
           { key: 'watch6_steps', header: 'Watch6 Adım', numeric: true },
           { key: 'garmin_steps', header: 'Garmin Adım', numeric: true },
-          { key: 'steps_diff_pct', header: 'Adım Fark (%)', numeric: true },
-          { key: 'watch6_sleep_hours', header: 'Watch6 Uyku (sa)', numeric: true },
-          { key: 'garmin_sleep_hours', header: 'Garmin Uyku (sa)', numeric: true },
-          { key: 'watch6_rhr_bpm', header: 'Watch6 RHR', numeric: true },
-          { key: 'garmin_rhr_bpm', header: 'Garmin RHR', numeric: true },
-          { key: 'watch6_hrv_ms', header: 'Watch6 HRV', numeric: true },
-          { key: 'garmin_hrv_ms', header: 'Garmin HRV', numeric: true },
-          { key: 'garmin_body_battery', header: 'Body Battery', numeric: true },
+          { key: 'watch6_sleep_hours', header: 'Watch6 Uyku', numeric: true },
+          { key: 'garmin_sleep_hours', header: 'Garmin Uyku', numeric: true },
+          { key: 'watch6_rhr_bpm', header: 'Watch6 Nabız', numeric: true },
+          { key: 'garmin_rhr_bpm', header: 'Garmin Nabız', numeric: true },
           {
             key: 'agreement_pct',
-            header: 'Uyum (%)',
+            header: 'Uyum',
             numeric: true,
             render: (row) => (
               <Tag
@@ -146,26 +141,26 @@ export function WearablesScreen({
       />
 
       <FormTemplate
-        title="Cihaz Önceliklendirme Kuralları ve Takip Döngüsü Penceresi (Bölüm 6)"
-        description="Aynı gün hem Galaxy Watch6 hem Garmin Smart Band veri ürettiğinde Günlük Öz tablosunda hangi cihazın baz alınacağını belirleyin."
+        title="Cihaz Önceliği ve Hedefler"
+        description="Aynı gün iki cihazdan veri geldiğinde hangi cihazın öncelikli olacağını seçin."
         onSubmit={handleSaveRules}
         onCancel={loadWearables}
-        submitLabel="Kuralları Uygula ve Birleştir"
-        cancelLabel="Varsayılana Dön"
+        submitLabel="Kaydet"
+        cancelLabel="Sıfırla"
       >
         <Select
-          label="Çakışan Metrik Birleştirme Stratejisi"
+          label="Birleştirme Yöntemi"
           value={rules.merge_strategy}
           onChange={(val) => setRules({ ...rules, merge_strategy: val })}
           options={[
-            { value: 'priority', label: 'Cihaz Öncelik Sırası (Önerilen)' },
+            { value: 'priority', label: 'Öncelik Sırası (Önerilen)' },
             { value: 'average', label: 'İki Cihazın Ortalaması' },
-            { value: 'max', label: 'En Yüksek Ölçüm Değeri' },
+            { value: 'max', label: 'En Yüksek Ölçüm' },
           ]}
         />
 
         <Select
-          label="Uyku, Stres ve Toparlanma Öncelikli Cihaz"
+          label="Uyku ve Dinlenme Önceliği"
           value={rules.sleep_priority?.[0] || 'garmin_band'}
           onChange={(val) =>
             setRules({
@@ -174,13 +169,13 @@ export function WearablesScreen({
             })
           }
           options={[
-            { value: 'garmin_band', label: '1. Garmin Smart Band -> 2. Samsung Galaxy Watch6' },
-            { value: 'galaxy_watch6', label: '1. Samsung Galaxy Watch6 -> 2. Garmin Smart Band' },
+            { value: 'garmin_band', label: 'Önce Garmin Bileklik' },
+            { value: 'galaxy_watch6', label: 'Önce Galaxy Watch6' },
           ]}
         />
 
         <Select
-          label="Adım, Aktif Kalori ve SpO2 Öncelikli Cihaz"
+          label="Adım ve Kalori Önceliği"
           value={rules.activity_priority?.[0] || 'galaxy_watch6'}
           onChange={(val) =>
             setRules({
@@ -189,13 +184,13 @@ export function WearablesScreen({
             })
           }
           options={[
-            { value: 'galaxy_watch6', label: '1. Samsung Galaxy Watch6 -> 2. Garmin Smart Band' },
-            { value: 'garmin_band', label: '1. Garmin Smart Band -> 2. Samsung Galaxy Watch6' },
+            { value: 'galaxy_watch6', label: 'Önce Galaxy Watch6' },
+            { value: 'garmin_band', label: 'Önce Garmin Bileklik' },
           ]}
         />
 
         <Input
-          label="Aktif Takip Döngüsü Başlangıç Tarihi (YYYY-AA-GG)"
+          label="Takip Başlangıç Tarihi (YYYY-AA-GG)"
           value={String(rules.cycle_start_date || '')}
           onChange={(val) => setRules({ ...rules, cycle_start_date: val })}
           error={cycleDateError}

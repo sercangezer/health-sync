@@ -144,21 +144,21 @@ export function ScaleScreen({
 
   return (
     <ListTemplate
-      title="Renpho Body Fat Scale ES-26BB-B — 13 Metrik Kompozisyon Kayıtları"
-      subtitle="Bulut API ve Web Bluetooth (BLE 0xFFE0 / 0x181D) üzerinden toplanan biyoelektrik empedans ölçümleri"
+      title="Akıllı Tartı Ölçümleri"
+      subtitle="Kilo, yağ, kas ve vücut suyu geçmişiniz"
       toolbar={
         <>
           <Button variant="default" onPress={() => setImportModalOpen(true)}>
             <Icon name="upload_file" />
-            <span>Veri / yedek içe aktar</span>
+            <span>Dosya Yükle</span>
           </Button>
           <Button variant="default" onPress={() => setBleModalOpen(true)}>
             <Icon name="bluetooth" />
-            <span>Web Bluetooth (BLE) ölçüm ekle</span>
+            <span>Tartı Ekle</span>
           </Button>
           <Button variant="primary" onPress={handleCloudSync}>
             <Icon name="sync" />
-            <span>Renpho buluttan çek</span>
+            <span>Güncelle</span>
           </Button>
         </>
       }
@@ -166,34 +166,29 @@ export function ScaleScreen({
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
 
       <Table
-        title="Tartı ve Vücut Kompozisyonu Ölçüm Tablosu"
+        title="Tartı Geçmişi"
         rowKey="id"
+        pageSize={8}
         data={items}
         selectable={true}
-        bulkActionLabel="Seçili ölçümleri sil"
+        bulkActionLabel="Seçilenleri sil"
         onBulkAction={handleBulkDelete}
-        emptyMessage="Henüz kaydedilmiş Renpho ES-26BB-B tartı ölçümü bulunmuyor."
+        emptyMessage="Henüz kaydedilmiş tartı ölçümü bulunmuyor."
         columns={[
           { key: 'date', header: 'Tarih' },
           { key: 'weight_kg', header: 'Kilo (kg)', numeric: true },
-          { key: 'bmi', header: 'BMI', numeric: true },
           { key: 'body_fat_pct', header: 'Yağ (%)', numeric: true },
           { key: 'muscle_mass_kg', header: 'Kas (kg)', numeric: true },
-          { key: 'visceral_fat', header: 'İç Organ Yağı', numeric: true },
-          { key: 'subcutaneous_fat_pct', header: 'Deri Altı (%)', numeric: true },
           { key: 'water_pct', header: 'Su (%)', numeric: true },
-          { key: 'bone_mass_kg', header: 'Kemik (kg)', numeric: true },
-          { key: 'bmr_kcal', header: 'BMR (kcal)', numeric: true },
-          { key: 'protein_pct', header: 'Protein (%)', numeric: true },
+          { key: 'visceral_fat', header: 'İç Yağlanma', numeric: true },
+          { key: 'bmi', header: 'BMI', numeric: true },
           { key: 'metabolic_age', header: 'Metabolik Yaş', numeric: true },
-          { key: 'fat_free_weight_kg', header: 'Yağsız Kütle (kg)', numeric: true },
-          { key: 'source', header: 'Kaynak' },
         ]}
       />
 
       <Modal
         isOpen={bleModalOpen}
-        title="Renpho ES-26BB-B Web Bluetooth (BLE) Ölçüm Kaydı"
+        title="Yeni Tartı Ölçümü Ekle"
         onClose={() => setBleModalOpen(false)}
       >
         <Input
@@ -203,7 +198,7 @@ export function ScaleScreen({
           error={weightError}
         />
         <Input
-          label="Biyoelektrik Empedans (Ohm)"
+          label="Empedans (Ohm)"
           value={impedanceInput}
           onChange={setImpedanceInput}
         />
@@ -212,37 +207,37 @@ export function ScaleScreen({
             İptal
           </Button>
           <Button variant="primary" onPress={handleSaveBle}>
-            13 Metriği Hesapla ve Kaydet
+            Kaydet
           </Button>
         </div>
       </Modal>
 
       <Modal
         isOpen={importModalOpen}
-        title="Health Connect (.db) veya Cihaz CSV Yedeği İçe Aktar"
+        title="Yedek Dosyası Yükle"
         onClose={() => setImportModalOpen(false)}
       >
         <Select
-          label="Cihaz kaynağı"
+          label="Cihaz"
           value={importDevice}
           onChange={setImportDevice}
           options={[
-            { value: 'galaxy_watch6', label: 'Samsung Galaxy Watch6 (Health Connect)' },
-            { value: 'garmin_band', label: 'Garmin Smart Band' },
-            { value: 'renpho_es26bb', label: 'Renpho ES-26BB-B Tartı' },
+            { value: 'galaxy_watch6', label: 'Galaxy Watch6' },
+            { value: 'garmin_band', label: 'Garmin Bileklik' },
+            { value: 'renpho_es26bb', label: 'Renpho Tartı' },
           ]}
         />
         <Select
-          label="Veri formatı"
+          label="Format"
           value={importFormat}
           onChange={setImportFormat}
           options={[
-            { value: 'csv', label: 'CSV Tablosu' },
-            { value: 'db', label: 'Health Connect SQLite (.db)' },
+            { value: 'csv', label: 'CSV' },
+            { value: 'db', label: 'SQLite (.db)' },
           ]}
         />
         <Input
-          label="CSV İçeriği"
+          label="İçerik"
           value={csvContent}
           onChange={setCsvContent}
         />
@@ -251,7 +246,7 @@ export function ScaleScreen({
             İptal
           </Button>
           <Button variant="primary" onPress={handleImportFile}>
-            İçe Aktar
+            Yükle
           </Button>
         </div>
       </Modal>

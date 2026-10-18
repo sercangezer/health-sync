@@ -37,20 +37,20 @@
   --space-4: 16px;
   --space-6: 24px;
   --space-8: 32px;
-  --radius-control: 2px;
-  --radius-container: 4px;
+  --radius-control: 8px;
+  --radius-container: 12px;
   --font-size-sm: 12px;
   --font-size-base: 14px;
-  --font-size-lg: 16px;
-  --control-height: 32px;
-  --table-row-height: 36px;
+  --font-size-lg: 18px;
+  --control-height: 36px;
+  --table-row-height: 44px;
   --icon-size: 20px;
   --border-width: 1px;
   --focus-width: 2px;
-  --sidebar-width: 224px;
-  --sidebar-collapsed-width: 56px;
+  --sidebar-width: 192px;
+  --sidebar-collapsed-width: 60px;
   --form-max-width: 640px;
-  --chart-height: 240px;
+  --chart-height: 250px;
 }
 
 :root[data-theme="dark"] {
