@@ -243,12 +243,21 @@ def get_webhook_heartbeat_monitor(db: Session) -> Dict[str, Any]:
     ]
     sources = []
     for src_key, default_label in source_defs:
-        matching = [r for r in rows if r.source == src_key]
+        matching = (
+            db.query(models.WebhookHeartbeat)
+            .filter(models.WebhookHeartbeat.source == src_key)
+            .order_by(models.WebhookHeartbeat.created_at.desc(), models.WebhookHeartbeat.id.desc())
+            .limit(30)
+            .all()
+        )
         if matching:
             top = matching[0]
             top_dt = top.created_at if top.created_at.tzinfo else top.created_at.replace(tzinfo=timezone.utc)
             age_sec = max(0, int((now_utc - top_dt).total_seconds()))
-            src_status = "healthy" if age_sec <= expected_minutes * 60 else "stale"
+            if top.status == "degraded":
+                src_status = "degraded"
+            else:
+                src_status = "healthy" if age_sec <= expected_minutes * 60 else "stale"
             sources.append(
                 {
                     "source": src_key,

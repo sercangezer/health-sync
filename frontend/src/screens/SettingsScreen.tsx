@@ -78,7 +78,7 @@ export function SettingsScreen({
     loadSettingsAndHeartbeat();
   }, [loadSettingsAndHeartbeat]);
 
-  const handleSaveSettings = async () => {
+  const handleSaveSettings = async (providerToVerify?: 'renpho' | 'garmin' | 'watch6') => {
     const autoMin = Number(formState.auto_sync_interval_minutes);
     const hbMin = Number(formState.webhook_expected_interval_minutes);
     if (Number.isNaN(autoMin) || autoMin < 5 || autoMin > 1440 || Number.isNaN(hbMin) || hbMin < 5 || hbMin > 1440) {
@@ -106,7 +106,18 @@ export function SettingsScreen({
         gemini_api_key: '',
         webhook_secret: '',
       }));
-      setToastMsg('Cihaz kimlik bilgileri ve webhook heartbeat ayarları kaydedildi.');
+      let verifyMessage = 'Cihaz kimlik bilgileri ve webhook heartbeat ayarları kaydedildi.';
+      if (providerToVerify) {
+        try {
+          const syncRes = await apiClient.triggerSync({ provider: providerToVerify });
+          if (syncRes?.message) {
+            verifyMessage = syncRes.message;
+          }
+        } catch (syncErr: any) {
+          verifyMessage = syncErr?.message || 'Ayarlar kaydedildi ancak bulut doğrulaması sırasında hata oluştu.';
+        }
+      }
+      setToastMsg(verifyMessage);
       const freshHb = await apiClient.getWebhookHeartbeat();
       setHeartbeat(freshHb);
     } catch (err: any) {
@@ -163,6 +174,39 @@ export function SettingsScreen({
       ? 'Webhook Heartbeat: GECİKMELİ'
       : 'Webhook Heartbeat: BEKLENİYOR';
 
+  const renphoSource = (heartbeat.sources || []).find((s: any) => s.source === 'renpho_es26bb');
+  const garminSource = (heartbeat.sources || []).find((s: any) => s.source === 'garmin_band');
+
+  const renphoTagTone = !settings.has_renpho_password
+    ? 'neutral'
+    : renphoSource?.status === 'healthy'
+      ? 'nominal'
+      : renphoSource?.status === 'degraded'
+        ? 'critical'
+        : 'warning';
+  const renphoTagLabel = !settings.has_renpho_password
+    ? 'BLE / Hesap Bekleniyor'
+    : renphoSource?.status === 'healthy'
+      ? 'Bulut Hesabı Bağlı'
+      : renphoSource?.status === 'degraded'
+        ? 'Giriş / Bağlantı Hatası'
+        : 'Doğrulama Bekleniyor';
+
+  const garminTagTone = !settings.has_garmin_password
+    ? 'neutral'
+    : garminSource?.status === 'healthy'
+      ? 'nominal'
+      : garminSource?.status === 'degraded'
+        ? 'critical'
+        : 'warning';
+  const garminTagLabel = !settings.has_garmin_password
+    ? 'Hesap Bekleniyor'
+    : garminSource?.status === 'healthy'
+      ? 'Bulut Hesabı Bağlı'
+      : garminSource?.status === 'degraded'
+        ? 'Giriş / Bağlantı Hatası'
+        : 'Doğrulama Bekleniyor';
+
   const curlSnippet = `curl -X POST ${window.location.origin}/api/webhook/heartbeat \\
   -H "Content-Type: application/json" \\
   -d '{"source":"galaxy_watch6","device_label":"Samsung Galaxy Watch6","event_type":"heartbeat","records_received":1,"payload_summary":"Health Connect arka plan sinyali"}'`;
@@ -215,12 +259,7 @@ export function SettingsScreen({
       <div className="hs-grid-2">
         <Panel
           title="1. Renpho ES-26BB-B Akıllı Tartı"
-          actions={
-            <Tag
-              tone={settings.has_renpho_password ? 'nominal' : 'neutral'}
-              label={settings.has_renpho_password ? 'Bulut Hesabı Bağlı' : 'BLE / Hesap Bekleniyor'}
-            />
-          }
+          actions={<Tag tone={renphoTagTone} label={renphoTagLabel} />}
         >
           <p className="hs-page-subtitle">
             Renpho Health mobil uygulama hesabınızı girin. 13 vücut kompozisyonu metriği buluttan otomatik çekilir.
@@ -241,7 +280,7 @@ export function SettingsScreen({
             testId="input-renpho-password"
           />
           <div className="hs-filter-bar">
-            <Button variant="primary" onPress={handleSaveSettings} testId="save-renpho-btn">
+            <Button variant="primary" onPress={() => handleSaveSettings('renpho')} testId="save-renpho-btn">
               <Icon name="save" />
               <span>Renpho Ayarlarını Kaydet</span>
             </Button>
@@ -250,12 +289,7 @@ export function SettingsScreen({
 
         <Panel
           title="2. Garmin Smart Band (Garmin Connect)"
-          actions={
-            <Tag
-              tone={settings.has_garmin_password ? 'nominal' : 'neutral'}
-              label={settings.has_garmin_password ? 'Bulut Hesabı Bağlı' : 'Hesap Bekleniyor'}
-            />
-          }
+          actions={<Tag tone={garminTagTone} label={garminTagLabel} />}
         >
           <p className="hs-page-subtitle">
             Garmin Connect hesabınızı girin. Uyku evreleri, Body Battery, stres, dinlenik nabız ve HRV otomatik çekilir.
@@ -276,7 +310,7 @@ export function SettingsScreen({
             testId="input-garmin-password"
           />
           <div className="hs-filter-bar">
-            <Button variant="primary" onPress={handleSaveSettings} testId="save-garmin-btn">
+            <Button variant="primary" onPress={() => handleSaveSettings('garmin')} testId="save-garmin-btn">
               <Icon name="save" />
               <span>Garmin Ayarlarını Kaydet</span>
             </Button>
@@ -317,7 +351,7 @@ export function SettingsScreen({
             testId="input-heartbeat-interval"
           />
           <div className="hs-filter-bar">
-            <Button variant="primary" onPress={handleSaveSettings} testId="save-watch6-btn">
+            <Button variant="primary" onPress={() => handleSaveSettings('watch6')} testId="save-watch6-btn">
               <Icon name="save" />
               <span>Watch6 Ayarlarını Kaydet</span>
             </Button>
@@ -352,7 +386,7 @@ export function SettingsScreen({
             testId="input-auto-sync-interval"
           />
           <div className="hs-filter-bar">
-            <Button variant="primary" onPress={handleSaveSettings} testId="save-ai-btn">
+            <Button variant="primary" onPress={() => handleSaveSettings()} testId="save-ai-btn">
               <Icon name="save" />
               <span>AI ve Otomasyon Ayarlarını Kaydet</span>
             </Button>
@@ -376,8 +410,24 @@ export function SettingsScreen({
             header: 'Heartbeat Durumu',
             render: (row) => (
               <Tag
-                tone={row.status === 'healthy' ? 'nominal' : row.status === 'stale' ? 'warning' : 'neutral'}
-                label={row.status === 'healthy' ? 'CANLI' : row.status === 'stale' ? 'GECİKMELİ' : 'BEKLENİYOR'}
+                tone={
+                  row.status === 'healthy'
+                    ? 'nominal'
+                    : row.status === 'degraded'
+                      ? 'critical'
+                      : row.status === 'stale'
+                        ? 'warning'
+                        : 'neutral'
+                }
+                label={
+                  row.status === 'healthy'
+                    ? 'CANLI'
+                    : row.status === 'degraded'
+                      ? 'BAĞLANTI HATASI'
+                      : row.status === 'stale'
+                        ? 'GECİKMELİ'
+                        : 'BEKLENİYOR'
+                }
               />
             ),
           },
