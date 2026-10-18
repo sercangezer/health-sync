@@ -82,8 +82,9 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
     Pulls daily stats, heart rate, sleep stages, stress, Body Battery, and HRV
     from Garmin Connect when GARMIN_EMAIL and GARMIN_PASSWORD are set.
     """
-    email = os.getenv("GARMIN_EMAIL", "").strip()
-    password = os.getenv("GARMIN_PASSWORD", "").strip()
+    int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+    email = (int_cfg.garmin_email if int_cfg and int_cfg.garmin_email else os.getenv("GARMIN_EMAIL", "")).strip()
+    password = (int_cfg.garmin_password if int_cfg and int_cfg.garmin_password else os.getenv("GARMIN_PASSWORD", "")).strip()
     synced = 0
 
     if email and password:
@@ -142,6 +143,17 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
             status="nominal",
             records_processed=processed,
             message=msg,
+        )
+    )
+    db.add(
+        models.WebhookHeartbeat(
+            source="garmin_band",
+            device_label="Garmin Smart Band (Connect Bridge)",
+            event_type="heartbeat",
+            status="healthy",
+            records_received=processed,
+            latency_ms=1.9,
+            payload_summary=msg,
         )
     )
     db.commit()

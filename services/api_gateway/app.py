@@ -21,7 +21,15 @@ from services.reconciliation.app import (
 )
 from services.renpho_sync.app import bulk_delete_scale_records, list_scale_records, upsert_scale_measurement
 from services.scheduler.app import get_sync_status_bundle, trigger_orchestrated_sync
-from services.watch6_ingest.app import import_health_file_payload, upsert_watch6_daily_records
+from services.watch6_ingest.app import (
+    get_or_create_integration_settings,
+    get_webhook_heartbeat_monitor,
+    import_health_file_payload,
+    record_webhook_heartbeat,
+    serialize_integration_settings,
+    update_integration_settings,
+    upsert_watch6_daily_records,
+)
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 VERSION_FILE = ROOT_DIR / "VERSION"
@@ -105,6 +113,28 @@ class BulkDeletePayload(BaseModel):
 
 class AiAnalyzePayload(BaseModel):
     focus_area: str = "holistic"
+
+
+class IntegrationSettingsUpdatePayload(BaseModel):
+    renpho_email: str = ""
+    renpho_password: str | None = None
+    garmin_email: str = ""
+    garmin_password: str | None = None
+    gemini_api_key: str | None = None
+    webhook_secret: str | None = None
+    watch_export_dir: str = "/data/watch_exports"
+    auto_sync_interval_minutes: int = 60
+    webhook_expected_interval_minutes: int = 60
+
+
+class WebhookHeartbeatPingPayload(BaseModel):
+    source: str = "galaxy_watch6"
+    device_label: str | None = None
+    event_type: str = "heartbeat"
+    records_received: int = 0
+    latency_ms: float = 1.4
+    payload_summary: str | None = None
+
 
 
 @app.get("/api/health")
@@ -511,3 +541,54 @@ def list_ai_reports(db: Session = Depends(get_db)):
         path="/reports",
         local_handler=lambda: list_ai_reports_data(db),
     )
+
+
+@app.get("/api/settings")
+def get_integration_settings(db: Session = Depends(get_db)):
+    ensure_default_config_and_seed(db)
+    return registry.call_http_or_local(
+        service_name="watch6-ingest-service",
+        base_url=os.getenv("WATCH6_SERVICE_URL"),
+        method="GET",
+        path="/settings",
+        local_handler=lambda: serialize_integration_settings(get_or_create_integration_settings(db)),
+    )
+
+
+@app.put("/api/settings")
+def put_integration_settings(payload: IntegrationSettingsUpdatePayload, db: Session = Depends(get_db)):
+    ensure_default_config_and_seed(db)
+    return registry.call_http_or_local(
+        service_name="watch6-ingest-service",
+        base_url=os.getenv("WATCH6_SERVICE_URL"),
+        method="PUT",
+        path="/settings",
+        json_body=payload.model_dump(exclude_none=True),
+        local_handler=lambda: update_integration_settings(db, payload.model_dump(exclude_none=True)),
+    )
+
+
+@app.get("/api/webhook/heartbeat")
+def get_webhook_heartbeat(db: Session = Depends(get_db)):
+    ensure_default_config_and_seed(db)
+    return registry.call_http_or_local(
+        service_name="watch6-ingest-service",
+        base_url=os.getenv("WATCH6_SERVICE_URL"),
+        method="GET",
+        path="/heartbeat",
+        local_handler=lambda: get_webhook_heartbeat_monitor(db),
+    )
+
+
+@app.post("/api/webhook/heartbeat")
+def send_webhook_heartbeat(payload: WebhookHeartbeatPingPayload, db: Session = Depends(get_db)):
+    ensure_default_config_and_seed(db)
+    return registry.call_http_or_local(
+        service_name="watch6-ingest-service",
+        base_url=os.getenv("WATCH6_SERVICE_URL"),
+        method="POST",
+        path="/heartbeat",
+        json_body=payload.model_dump(exclude_none=True),
+        local_handler=lambda: record_webhook_heartbeat(db, payload.model_dump(exclude_none=True)),
+    )
+

@@ -188,6 +188,32 @@ erDiagram
         string recommendations_json
         string raw_markdown
     }
+
+    INTEGRATION_SETTINGS {
+        int id PK
+        string renpho_email
+        string renpho_password
+        string garmin_email
+        string garmin_password
+        string gemini_api_key
+        string webhook_secret
+        string watch_export_dir
+        int auto_sync_interval_minutes
+        int webhook_expected_interval_minutes
+        datetime updated_at
+    }
+
+    WEBHOOK_HEARTBEATS {
+        int id PK
+        string source
+        string device_label
+        string event_type
+        string status
+        int records_received
+        float latency_ms
+        string payload_summary
+        datetime created_at
+    }
 ```
 
 ---

@@ -18,7 +18,12 @@ VALID_PROVIDERS = {"all", "renpho", "garmin", "watch6"}
 
 
 def get_sync_status_bundle(db: Session) -> Dict[str, Any]:
-    interval = int(os.getenv("AUTO_SYNC_INTERVAL_MINUTES", "60"))
+    int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+    interval = int(
+        int_cfg.auto_sync_interval_minutes
+        if int_cfg and int_cfg.auto_sync_interval_minutes
+        else os.getenv("AUTO_SYNC_INTERVAL_MINUTES", "60")
+    )
     logs = (
         db.query(models.SyncLog)
         .order_by(models.SyncLog.created_at.desc())

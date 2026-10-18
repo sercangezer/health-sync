@@ -139,3 +139,38 @@ class AIInsightReport(Base):
     source_mode = Column(String(32), nullable=False)
     summary_markdown = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class IntegrationSettings(Base):
+    """Stores UI-managed cloud credentials, webhook tokens, and heartbeat thresholds."""
+
+    __tablename__ = "integration_settings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    renpho_email = Column(String(256), default="", nullable=False)
+    renpho_password = Column(String(256), default="", nullable=False)
+    garmin_email = Column(String(256), default="", nullable=False)
+    garmin_password = Column(String(256), default="", nullable=False)
+    gemini_api_key = Column(String(256), default="", nullable=False)
+    webhook_secret = Column(String(256), default="", nullable=False)
+    watch_export_dir = Column(String(256), default="/data/watch_exports", nullable=False)
+    auto_sync_interval_minutes = Column(Integer, default=60, nullable=False)
+    webhook_expected_interval_minutes = Column(Integer, default=60, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+
+class WebhookHeartbeat(Base):
+    """Records live webhook ingest and heartbeat pings from Galaxy Watch6 / Health Connect / bridges."""
+
+    __tablename__ = "webhook_heartbeats"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source = Column(String(64), index=True, nullable=False)
+    device_label = Column(String(128), nullable=False)
+    event_type = Column(String(32), default="heartbeat", nullable=False)
+    status = Column(String(24), default="healthy", nullable=False)
+    records_received = Column(Integer, default=0, nullable=False)
+    latency_ms = Column(Float, default=1.2, nullable=False)
+    payload_summary = Column(String(512), default="", nullable=False)
+    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+

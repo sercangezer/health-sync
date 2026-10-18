@@ -302,6 +302,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AiReportListResponse'
+  /api/settings:
+    get:
+      operationId: getIntegrationSettings
+      summary: Renpho, Garmin, Gemini AI kimlik bilgisi durumlarını ve webhook çalışma parametrelerini döndürür
+      tags:
+        - Settings
+      responses:
+        '200':
+          description: Bağlantı ve entegrasyon ayarları
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSettingsResponse'
+    put:
+      operationId: updateIntegrationSettings
+      summary: Renpho, Garmin, Gemini AI bağlantı kimlik bilgilerini ve webhook heartbeat eşiklerini günceller
+      tags:
+        - Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationSettingsUpdate'
+      responses:
+        '200':
+          description: Güncellenmiş bağlantı ve entegrasyon ayarları
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationSettingsResponse'
+  /api/webhook/heartbeat:
+    get:
+      operationId: getWebhookHeartbeat
+      summary: Webhook köprüsünün canlılık (heartbeat) durumunu, cihaz sinyallerini ve son olay geçmişini döndürür
+      tags:
+        - Settings
+      responses:
+        '200':
+          description: Webhook heartbeat izleme durumu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookHeartbeatResponse'
+    post:
+      operationId: sendWebhookHeartbeat
+      summary: Webhook köprüsüne canlı heartbeat sinyali gönderir ve izleme tablosunu günceller
+      tags:
+        - Settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookHeartbeatPingRequest'
+      responses:
+        '200':
+          description: Güncellenmiş webhook heartbeat izleme durumu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebhookHeartbeatResponse'
 components:
   schemas:
     ErrorEnvelope:
@@ -728,3 +790,132 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AiReportItem'
+    IntegrationSettingsResponse:
+      type: object
+      required:
+        - renpho_email
+        - has_renpho_password
+        - renpho_password_masked
+        - garmin_email
+        - has_garmin_password
+        - garmin_password_masked
+        - has_gemini_api_key
+        - gemini_api_key_masked
+        - has_webhook_secret
+        - webhook_secret_masked
+        - watch_export_dir
+        - auto_sync_interval_minutes
+        - webhook_expected_interval_minutes
+        - updated_at
+      properties:
+        renpho_email:
+          type: string
+        has_renpho_password:
+          type: boolean
+        renpho_password_masked:
+          type: string
+        garmin_email:
+          type: string
+        has_garmin_password:
+          type: boolean
+        garmin_password_masked:
+          type: string
+        has_gemini_api_key:
+          type: boolean
+        gemini_api_key_masked:
+          type: string
+        has_webhook_secret:
+          type: boolean
+        webhook_secret_masked:
+          type: string
+        watch_export_dir:
+          type: string
+        auto_sync_interval_minutes:
+          type: integer
+        webhook_expected_interval_minutes:
+          type: integer
+        updated_at:
+          type: string
+    IntegrationSettingsUpdate:
+      type: object
+      required:
+        - renpho_email
+        - garmin_email
+        - watch_export_dir
+        - auto_sync_interval_minutes
+        - webhook_expected_interval_minutes
+      properties:
+        renpho_email:
+          type: string
+        renpho_password:
+          type: string
+        garmin_email:
+          type: string
+        garmin_password:
+          type: string
+        gemini_api_key:
+          type: string
+        webhook_secret:
+          type: string
+        watch_export_dir:
+          type: string
+        auto_sync_interval_minutes:
+          type: integer
+        webhook_expected_interval_minutes:
+          type: integer
+    WebhookHeartbeatResponse:
+      type: object
+      required:
+        - overall_status
+        - webhook_ingest_url
+        - webhook_heartbeat_url
+        - expected_interval_minutes
+        - last_heartbeat_at
+        - seconds_since_last_heartbeat
+        - total_heartbeats_24h
+        - total_records_ingested_24h
+        - sources
+        - recent_heartbeats
+      properties:
+        overall_status:
+          type: string
+        webhook_ingest_url:
+          type: string
+        webhook_heartbeat_url:
+          type: string
+        expected_interval_minutes:
+          type: integer
+        last_heartbeat_at:
+          type: string
+        seconds_since_last_heartbeat:
+          type: integer
+        total_heartbeats_24h:
+          type: integer
+        total_records_ingested_24h:
+          type: integer
+        sources:
+          type: array
+          items:
+            type: object
+        recent_heartbeats:
+          type: array
+          items:
+            type: object
+    WebhookHeartbeatPingRequest:
+      type: object
+      required:
+        - source
+      properties:
+        source:
+          type: string
+        device_label:
+          type: string
+        event_type:
+          type: string
+        records_received:
+          type: integer
+        latency_ms:
+          type: number
+        payload_summary:
+          type: string
+

@@ -31,6 +31,10 @@ ENDPOINT_METADATA = {
     "getAiPrompts": ("services/ai_advisor/app.py::build_multi_device_prompt", "test_analytics_insights_and_ai_advisor_endpoints", "AiScreen.tsx"),
     "createAiAnalysis": ("services/ai_advisor/app.py::generate_ai_report", "test_analytics_insights_and_ai_advisor_endpoints", "AiScreen.tsx"),
     "listAiReports": ("services/ai_advisor/app.py::list_ai_reports_data", "test_analytics_insights_and_ai_advisor_endpoints", "AiScreen.tsx"),
+    "getIntegrationSettings": ("services/watch6_ingest/app.py::get_or_create_integration_settings", "test_integration_settings_and_webhook_heartbeat_monitor", "SettingsScreen.tsx"),
+    "updateIntegrationSettings": ("services/watch6_ingest/app.py::update_integration_settings", "test_integration_settings_and_webhook_heartbeat_monitor", "SettingsScreen.tsx"),
+    "getWebhookHeartbeat": ("services/watch6_ingest/app.py::get_webhook_heartbeat_monitor", "test_integration_settings_and_webhook_heartbeat_monitor", "SettingsScreen.tsx"),
+    "sendWebhookHeartbeat": ("services/watch6_ingest/app.py::record_webhook_heartbeat", "test_integration_settings_and_webhook_heartbeat_monitor", "SettingsScreen.tsx"),
 }
 
 

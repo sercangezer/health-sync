@@ -3,6 +3,7 @@ import { AiScreen } from './screens/AiScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { InsightsScreen } from './screens/InsightsScreen';
 import { ScaleScreen } from './screens/ScaleScreen';
+import { SettingsScreen } from './screens/SettingsScreen';
 import { UIGalleryScreen } from './screens/UIGalleryScreen';
 import { WearablesScreen } from './screens/WearablesScreen';
 import { Shell } from './ui/Shell';
@@ -59,6 +60,7 @@ export function App() {
       {activeTab === 'insights' ? <InsightsScreen forcedState={forcedState} /> : null}
       {activeTab === 'wearables' ? <WearablesScreen forcedState={forcedState} /> : null}
       {activeTab === 'ai' ? <AiScreen forcedState={forcedState} /> : null}
+      {activeTab === 'settings' ? <SettingsScreen forcedState={forcedState} /> : null}
       {activeTab === 'gallery' ? <UIGalleryScreen /> : null}
     </Shell>
   );
