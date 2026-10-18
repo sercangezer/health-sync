@@ -14,6 +14,7 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'insights', label: 'Anlamlandırma ve korelasyon', icon: 'analytics' },
   { id: 'wearables', label: 'Watch6 ve Garmin kıyaslama', icon: 'watch' },
   { id: 'ai', label: 'AI danışman ve otomasyon', icon: 'psychology' },
+  { id: 'settings', label: 'Ayarlar ve heartbeat', icon: 'settings' },
 ];
 
 export function Shell({

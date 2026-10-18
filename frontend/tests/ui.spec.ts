@@ -1673,6 +1673,99 @@ const MOCK_API_RESPONSES: Record<string, unknown> = {
         "summary_markdown": "## Bütüncül Çoklu Cihaz Sağlık ve Metabolizma Sentezi\n\n### 1. Vücut Kompozisyonu (Renpho ES-26BB-B)\n- **Durum:** Sağlıklı Yağ Kaybı ve Kas Korunumu\n- **Net Değişim:** Toplam `-2.22 kg` değişimin `%81.1` kadarı yağ dokusundan (`-1.8 kg`), `%8.1` kadarı kas dokusundan (`-0.18 kg`) gerçekleşmiştir.\n- **Yorum:** Döngü başından beri toplam -2.22 kg değişimin %81.1 kadarı yağ kütlesinden gerçekleşti. Kas kütlesi değişimi (-0.18 kg) güvenli fizyolojik sınırlar içindedir.\n\n### 2. Kardiyovasküler ve Otonom Toparlanma (Galaxy Watch6 + Garmin Smart Band)\n- **Bileşik Toparlanma Skoru:** `83.0/100` (`nominal`)\n- **Sensör Uyum Skoru:** Watch6 ve Garmin arasında `%94.7` ölçüm tutarlılığı mevcuttur.\n- **Korelasyon Özeti:** Uyku süresi 7 saatin üzerinde tutulduğunda HRV artmakta ve ertesi sabah tartıda ödem dalgalanması azalmaktadır.\n\n### 3. Eylem Planı (Önümüzdeki 7 Gün)\n1. **Protein ve Hidrasyon:** Kas korunumu için kilogram başına 1.6g protein ve günlük 2.5L su hedefini koruyun.\n2. **Uyku Penceresi:** Garmin Body Battery şarjını 85+ seviyesinde tutmak için 7.2 saat uyku hedefleyin.\n3. **Aktivite:** Galaxy Watch6 üzerinde günlük 8.500+ adım ve haftada 3 gün direnç egzersizi uygulayın."
       }
     ]
+  },
+  "/api/settings": {
+    "renpho_email": "sercan@h-diyet.local",
+    "has_renpho_password": true,
+    "renpho_password_masked": "••••••••",
+    "garmin_email": "sercan@h-diyet.local",
+    "has_garmin_password": true,
+    "garmin_password_masked": "••••••••",
+    "has_gemini_api_key": true,
+    "gemini_api_key_masked": "••••••••",
+    "has_webhook_secret": true,
+    "webhook_secret_masked": "••••••••",
+    "watch_export_dir": "/data/watch_exports",
+    "auto_sync_interval_minutes": 60,
+    "webhook_expected_interval_minutes": 60,
+    "updated_at": "2026-10-18T09:55:00Z"
+  },
+  "/api/webhook/heartbeat": {
+    "overall_status": "healthy",
+    "webhook_ingest_url": "/api/ingest/webhook",
+    "webhook_heartbeat_url": "/api/webhook/heartbeat",
+    "expected_interval_minutes": 60,
+    "last_heartbeat_at": "2026-10-18T09:58:00Z",
+    "seconds_since_last_heartbeat": 120,
+    "total_heartbeats_24h": 24,
+    "total_records_ingested_24h": 42,
+    "sources": [
+      {
+        "source": "galaxy_watch6",
+        "device_label": "Samsung Galaxy Watch6 (Health Connect Webhook)",
+        "status": "healthy",
+        "last_seen_at": "2026-10-18T09:58:00Z",
+        "seconds_ago": 120,
+        "event_count": 12,
+        "last_latency_ms": 1.6,
+        "last_payload_summary": "Health Connect otomatik arka plan senkronizasyonu (adım, RHR, HRV, uyku, SpO2)"
+      },
+      {
+        "source": "garmin_band",
+        "device_label": "Garmin Smart Band (Connect Bridge)",
+        "status": "healthy",
+        "last_seen_at": "2026-10-18T09:50:00Z",
+        "seconds_ago": 600,
+        "event_count": 6,
+        "last_latency_ms": 1.9,
+        "last_payload_summary": "Garmin Connect günlük uyku evreleri, Body Battery ve stres senkronizasyonu"
+      },
+      {
+        "source": "renpho_es26bb",
+        "device_label": "Renpho Body Fat Scale ES-26BB-B",
+        "status": "healthy",
+        "last_seen_at": "2026-10-18T08:00:00Z",
+        "seconds_ago": 7200,
+        "event_count": 6,
+        "last_latency_ms": 1.3,
+        "last_payload_summary": "Renpho ES-26BB-B 13-parametreli BIA tartı telemetri doğrulaması"
+      }
+    ],
+    "recent_heartbeats": [
+      {
+        "id": 3,
+        "source": "galaxy_watch6",
+        "device_label": "Samsung Galaxy Watch6 (Health Connect Webhook)",
+        "event_type": "webhook_ingest",
+        "status": "healthy",
+        "records_received": 14,
+        "latency_ms": 1.6,
+        "payload_summary": "Health Connect otomatik arka plan senkronizasyonu (adım, RHR, HRV, uyku, SpO2)",
+        "created_at": "2026-10-18T09:58:00Z"
+      },
+      {
+        "id": 2,
+        "source": "garmin_band",
+        "device_label": "Garmin Smart Band (Connect Bridge)",
+        "event_type": "heartbeat",
+        "status": "healthy",
+        "records_received": 14,
+        "latency_ms": 1.9,
+        "payload_summary": "Garmin Connect günlük uyku evreleri, Body Battery ve stres senkronizasyonu",
+        "created_at": "2026-10-18T09:50:00Z"
+      },
+      {
+        "id": 1,
+        "source": "renpho_es26bb",
+        "device_label": "Renpho Body Fat Scale ES-26BB-B",
+        "event_type": "heartbeat",
+        "status": "healthy",
+        "records_received": 14,
+        "latency_ms": 1.3,
+        "payload_summary": "Renpho ES-26BB-B 13-parametreli BIA tartı telemetri doğrulaması",
+        "created_at": "2026-10-18T08:00:00Z"
+      }
+    ]
   }
 };
 
@@ -1688,7 +1781,7 @@ async function setupDeterministicApiMocks(page: Page) {
   });
 }
 
-const TABS = ['dashboard', 'scale', 'insights', 'wearables', 'ai', 'gallery'] as const;
+const TABS = ['dashboard', 'scale', 'insights', 'wearables', 'ai', 'settings', 'gallery'] as const;
 const THEMES = ['dark', 'light'] as const;
 
 test.describe('HealthSync Section 4 Visual, Accessibility & Offline Verification Suite', () => {

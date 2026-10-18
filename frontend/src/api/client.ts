@@ -80,4 +80,12 @@ export const apiClient = {
     requestJson<T>('POST', '/api/ai/analyze', { body }),
   listAiReports: <T = any>(): Promise<T> =>
     requestJson<T>('GET', '/api/ai/reports'),
+  getIntegrationSettings: <T = any>(): Promise<T> =>
+    requestJson<T>('GET', '/api/settings'),
+  updateIntegrationSettings: <T = any>(body: Record<string, unknown>): Promise<T> =>
+    requestJson<T>('PUT', '/api/settings', { body }),
+  getWebhookHeartbeat: <T = any>(): Promise<T> =>
+    requestJson<T>('GET', '/api/webhook/heartbeat'),
+  sendWebhookHeartbeat: <T = any>(body: Record<string, unknown>): Promise<T> =>
+    requestJson<T>('POST', '/api/webhook/heartbeat', { body }),
 };

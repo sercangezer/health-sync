@@ -305,3 +305,81 @@ def test_circuit_breaker_isolation_and_recovery():
     health_res = client.get("/api/health")
     assert health_res.status_code == 200
     assert health_res.json()["status"] == "degraded"
+
+
+def test_integration_settings_and_webhook_heartbeat_monitor():
+    cfg_res = client.get("/api/settings")
+    assert cfg_res.status_code == 200
+    cfg = cfg_res.json()
+    assert cfg["auto_sync_interval_minutes"] == 60
+    assert cfg["webhook_expected_interval_minutes"] == 60
+    assert cfg["has_renpho_password"] is False
+
+    upd_res = client.put(
+        "/api/settings",
+        json={
+            "renpho_email": "sercan@ornek.com",
+            "renpho_password": "secret-renpho-pass",
+            "garmin_email": "garmin@ornek.com",
+            "garmin_password": "secret-garmin-pass",
+            "gemini_api_key": "AIza-test-key",
+            "webhook_secret": "wh-secret-123",
+            "watch_export_dir": "/data/watch_exports",
+            "auto_sync_interval_minutes": 30,
+            "webhook_expected_interval_minutes": 45,
+        },
+    )
+    assert upd_res.status_code == 200
+    upd = upd_res.json()
+    assert upd["renpho_email"] == "sercan@ornek.com"
+    assert upd["has_renpho_password"] is True
+    assert upd["renpho_password_masked"] == "••••••••"
+    assert upd["has_garmin_password"] is True
+    assert upd["has_gemini_api_key"] is True
+    assert upd["has_webhook_secret"] is True
+    assert upd["auto_sync_interval_minutes"] == 30
+    assert upd["webhook_expected_interval_minutes"] == 45
+
+    # Invalid interval boundary (< 5 minutes) must return 400
+    bad_cfg = client.put(
+        "/api/settings",
+        json={
+            "renpho_email": "sercan@ornek.com",
+            "garmin_email": "garmin@ornek.com",
+            "watch_export_dir": "/data/watch_exports",
+            "auto_sync_interval_minutes": 1,
+            "webhook_expected_interval_minutes": 45,
+        },
+    )
+    assert bad_cfg.status_code == 400
+
+    # Check webhook heartbeat monitor
+    hb_res = client.get("/api/webhook/heartbeat")
+    assert hb_res.status_code == 200
+    hb = hb_res.json()
+    assert hb["overall_status"] == "healthy"
+    assert hb["expected_interval_minutes"] == 45
+    assert len(hb["sources"]) == 3
+    initial_hb_count = hb["total_heartbeats_24h"]
+
+    # Send a live webhook heartbeat probe
+    ping_res = client.post(
+        "/api/webhook/heartbeat",
+        json={
+            "source": "galaxy_watch6",
+            "device_label": "Samsung Galaxy Watch6 (Tasker Bridge)",
+            "event_type": "heartbeat",
+            "records_received": 3,
+            "latency_ms": 1.1,
+            "payload_summary": "Canlı Tasker heartbeat yoklaması",
+        },
+    )
+    assert ping_res.status_code == 200
+    ping_body = ping_res.json()
+    assert ping_body["total_heartbeats_24h"] == initial_hb_count + 1
+    assert ping_body["recent_heartbeats"][0]["payload_summary"] == "Canlı Tasker heartbeat yoklaması"
+
+    # Reject unknown heartbeat source
+    bad_hb = client.post("/api/webhook/heartbeat", json={"source": "unknown_device"})
+    assert bad_hb.status_code == 400
+

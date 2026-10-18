@@ -114,8 +114,9 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
     Synchronizes measurements from Renpho Cloud if RENPHO_EMAIL and RENPHO_PASSWORD
     are configured; otherwise validates existing ES-26BB-B telemetry.
     """
-    email = os.getenv("RENPHO_EMAIL", "").strip()
-    password = os.getenv("RENPHO_PASSWORD", "").strip()
+    int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+    email = (int_cfg.renpho_email if int_cfg and int_cfg.renpho_email else os.getenv("RENPHO_EMAIL", "")).strip()
+    password = (int_cfg.renpho_password if int_cfg and int_cfg.renpho_password else os.getenv("RENPHO_PASSWORD", "")).strip()
     added = 0
 
     if email and password:
@@ -174,6 +175,17 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
             status="nominal",
             records_processed=processed,
             message=msg,
+        )
+    )
+    db.add(
+        models.WebhookHeartbeat(
+            source="renpho_es26bb",
+            device_label="Renpho Body Fat Scale ES-26BB-B",
+            event_type="heartbeat",
+            status="healthy",
+            records_received=processed,
+            latency_ms=1.3,
+            payload_summary=msg,
         )
     )
     db.commit()

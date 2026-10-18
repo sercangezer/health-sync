@@ -21,3 +21,7 @@ Bu belge `api/openapi.yaml` sözleşmesinden `make gen-api` komutuyla otomatik �
 | `GET /api/ai/prompts` | `getAiPrompts` | `services/ai_advisor/app.py::build_multi_device_prompt` | `test_analytics_insights_and_ai_advisor_endpoints` | `AiScreen.tsx` |
 | `POST /api/ai/analyze` | `createAiAnalysis` | `services/ai_advisor/app.py::generate_ai_report` | `test_analytics_insights_and_ai_advisor_endpoints` | `AiScreen.tsx` |
 | `GET /api/ai/reports` | `listAiReports` | `services/ai_advisor/app.py::list_ai_reports_data` | `test_analytics_insights_and_ai_advisor_endpoints` | `AiScreen.tsx` |
+| `GET /api/settings` | `getIntegrationSettings` | `services/watch6_ingest/app.py::get_or_create_integration_settings` | `test_integration_settings_and_webhook_heartbeat_monitor` | `SettingsScreen.tsx` |
+| `PUT /api/settings` | `updateIntegrationSettings` | `services/watch6_ingest/app.py::update_integration_settings` | `test_integration_settings_and_webhook_heartbeat_monitor` | `SettingsScreen.tsx` |
+| `GET /api/webhook/heartbeat` | `getWebhookHeartbeat` | `services/watch6_ingest/app.py::get_webhook_heartbeat_monitor` | `test_integration_settings_and_webhook_heartbeat_monitor` | `SettingsScreen.tsx` |
+| `POST /api/webhook/heartbeat` | `sendWebhookHeartbeat` | `services/watch6_ingest/app.py::record_webhook_heartbeat` | `test_integration_settings_and_webhook_heartbeat_monitor` | `SettingsScreen.tsx` |

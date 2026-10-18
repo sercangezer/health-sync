@@ -100,7 +100,8 @@ def generate_ai_report(db: Session, focus_area: str = "holistic") -> Dict[str, A
     rec_score = insights.get("recovery_score", 0.0)
     agreement = comparison.get("agreement_score", 0.0)
 
-    api_key = os.getenv("GEMINI_API_KEY", "").strip()
+    int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+    api_key = (int_cfg.gemini_api_key if int_cfg and int_cfg.gemini_api_key else os.getenv("GEMINI_API_KEY", "")).strip()
     source_mode = "deterministic_clinical_engine"
     markdown_text = ""
 

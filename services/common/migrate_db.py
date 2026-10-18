@@ -11,6 +11,7 @@ logger = setup_logger("migrate_db")
 MIGRATIONS = [
     ("0001", "create_core_telemetry_tables"),
     ("0002", "seed_default_reconciliation_and_baseline_telemetry"),
+    ("0003", "create_integration_settings_and_webhook_heartbeats"),
 ]
 
 
@@ -33,6 +34,25 @@ def ensure_default_config_and_seed(db: Session) -> None:
             height_cm=178.0,
         )
         db.add(cfg)
+        db.commit()
+
+    int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+    if not int_cfg:
+        import os
+
+        int_cfg = models.IntegrationSettings(
+            id=1,
+            renpho_email=os.getenv("RENPHO_EMAIL", "").strip(),
+            renpho_password=os.getenv("RENPHO_PASSWORD", "").strip(),
+            garmin_email=os.getenv("GARMIN_EMAIL", "").strip(),
+            garmin_password=os.getenv("GARMIN_PASSWORD", "").strip(),
+            gemini_api_key=os.getenv("GEMINI_API_KEY", "").strip(),
+            webhook_secret=os.getenv("WEBHOOK_SECRET_TOKEN", "").strip(),
+            watch_export_dir=os.getenv("WATCH_EXPORT_DIR", "/data/watch_exports").strip() or "/data/watch_exports",
+            auto_sync_interval_minutes=int(os.getenv("AUTO_SYNC_INTERVAL_MINUTES", "60")),
+            webhook_expected_interval_minutes=60,
+        )
+        db.add(int_cfg)
         db.commit()
 
     existing_scale_count = db.query(models.ScaleMeasurement).count()
@@ -169,6 +189,44 @@ def ensure_default_config_and_seed(db: Session) -> None:
             )
         )
         db.commit()
+
+    existing_hb_count = db.query(models.WebhookHeartbeat).count()
+    if existing_hb_count == 0:
+        db.add(
+            models.WebhookHeartbeat(
+                source="galaxy_watch6",
+                device_label="Samsung Galaxy Watch6 (Health Connect Webhook)",
+                event_type="webhook_ingest",
+                status="healthy",
+                records_received=14,
+                latency_ms=1.8,
+                payload_summary="Health Connect otomatik arka plan senkronizasyonu (adım, RHR, HRV, uyku, SpO2)",
+            )
+        )
+        db.add(
+            models.WebhookHeartbeat(
+                source="garmin_band",
+                device_label="Garmin Smart Band (Connect Bridge)",
+                event_type="heartbeat",
+                status="healthy",
+                records_received=14,
+                latency_ms=2.1,
+                payload_summary="Garmin Connect günlük uyku evreleri, Body Battery ve stres senkronizasyonu",
+            )
+        )
+        db.add(
+            models.WebhookHeartbeat(
+                source="renpho_es26bb",
+                device_label="Renpho Body Fat Scale ES-26BB-B",
+                event_type="heartbeat",
+                status="healthy",
+                records_received=14,
+                latency_ms=1.4,
+                payload_summary="Renpho ES-26BB-B 13-parametreli BIA tartı telemetri doğrulaması",
+            )
+        )
+        db.commit()
+
 
 
 def run_migrations() -> None:
