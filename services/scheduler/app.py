@@ -1,9 +1,12 @@
+import asyncio
+import contextlib
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
 from services.common import models
-from services.common.database import get_db
+from services.common.database import SessionLocal, get_db
 from services.common.logger import attach_standard_middleware_and_handlers
 from services.common.resilience import registry
 from services.garmin_sync.app import sync_garmin_cloud
@@ -11,7 +14,47 @@ from services.reconciliation.app import reconcile_all_days
 from services.renpho_sync.app import sync_renpho_cloud
 from services.watch6_ingest.app import sync_watch6_export_dir
 
-app = FastAPI(title="Automated Sync & Pipeline Scheduler Orchestrator", version="1.0.0")
+
+async def _periodic_auto_sync_loop():
+    while True:
+        await asyncio.sleep(60)
+        db = SessionLocal()
+        try:
+            int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
+            interval_min = int(
+                int_cfg.auto_sync_interval_minutes
+                if int_cfg and int_cfg.auto_sync_interval_minutes
+                else os.getenv("AUTO_SYNC_INTERVAL_MINUTES", "360")
+            )
+            latest_log = db.query(models.SyncLog).order_by(models.SyncLog.created_at.desc()).first()
+            should_run = False
+            if latest_log is None:
+                should_run = True
+            else:
+                dt = latest_log.created_at
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                elapsed_sec = (datetime.now(timezone.utc) - dt).total_seconds()
+                if elapsed_sec >= interval_min * 60:
+                    should_run = True
+            if should_run:
+                trigger_orchestrated_sync(db, provider="all")
+        except Exception as exc:
+            logger.warning(f"Periodic auto-sync check failed: {exc}")
+        finally:
+            db.close()
+
+
+@contextlib.asynccontextmanager
+async def lifespan(_app: FastAPI):
+    task = asyncio.create_task(_periodic_auto_sync_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+
+
+app = FastAPI(title="Automated Sync & Pipeline Scheduler Orchestrator", version="1.0.0", lifespan=lifespan)
 logger = attach_standard_middleware_and_handlers(app, "scheduler-orchestrator")
 
 VALID_PROVIDERS = {"all", "renpho", "garmin", "watch6"}
