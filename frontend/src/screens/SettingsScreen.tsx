@@ -177,34 +177,42 @@ export function SettingsScreen({
   const renphoSource = (heartbeat.sources || []).find((s: any) => s.source === 'renpho_es26bb');
   const garminSource = (heartbeat.sources || []).find((s: any) => s.source === 'garmin_band');
 
+  const renphoConnected =
+    renphoSource?.status === 'healthy' ||
+    renphoSource?.status === 'stale' ||
+    (renphoSource?.event_count ?? 0) > 0;
   const renphoTagTone = !settings.has_renpho_password
     ? 'neutral'
-    : renphoSource?.status === 'healthy'
-      ? 'nominal'
-      : renphoSource?.status === 'degraded'
-        ? 'critical'
+    : renphoSource?.status === 'degraded'
+      ? 'critical'
+      : renphoConnected
+        ? 'nominal'
         : 'warning';
   const renphoTagLabel = !settings.has_renpho_password
     ? 'BLE / Hesap Bekleniyor'
-    : renphoSource?.status === 'healthy'
-      ? 'Bulut Hesabı Bağlı'
-      : renphoSource?.status === 'degraded'
-        ? 'Giriş / Bağlantı Hatası'
+    : renphoSource?.status === 'degraded'
+      ? 'Giriş / Bağlantı Hatası'
+      : renphoConnected
+        ? 'Bulut Hesabı Bağlı'
         : 'Doğrulama Bekleniyor';
 
+  const garminConnected =
+    garminSource?.status === 'healthy' ||
+    garminSource?.status === 'stale' ||
+    (garminSource?.event_count ?? 0) > 0;
   const garminTagTone = !settings.has_garmin_password
     ? 'neutral'
-    : garminSource?.status === 'healthy'
-      ? 'nominal'
-      : garminSource?.status === 'degraded'
-        ? 'critical'
+    : garminSource?.status === 'degraded'
+      ? 'critical'
+      : garminConnected
+        ? 'nominal'
         : 'warning';
   const garminTagLabel = !settings.has_garmin_password
     ? 'Hesap Bekleniyor'
-    : garminSource?.status === 'healthy'
-      ? 'Bulut Hesabı Bağlı'
-      : garminSource?.status === 'degraded'
-        ? 'Giriş / Bağlantı Hatası'
+    : garminSource?.status === 'degraded'
+      ? 'Giriş / Bağlantı Hatası'
+      : garminConnected
+        ? 'Bulut Hesabı Bağlı'
         : 'Doğrulama Bekleniyor';
 
   const curlSnippet = `curl -X POST ${window.location.origin}/api/webhook/heartbeat \\

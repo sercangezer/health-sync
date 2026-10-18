@@ -261,7 +261,8 @@ def get_webhook_heartbeat_monitor(db: Session) -> Dict[str, Any]:
             if top.status == "degraded":
                 src_status = "degraded"
             else:
-                src_status = "healthy" if age_sec <= expected_minutes * 60 else "stale"
+                sync_window_min = max(expected_minutes, int(cfg.auto_sync_interval_minutes or 60))
+                src_status = "healthy" if age_sec <= (sync_window_min * 60 + 1800) else "stale"
             sources.append(
                 {
                     "source": src_key,
