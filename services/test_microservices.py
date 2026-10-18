@@ -248,6 +248,14 @@ def test_health_connect_sqlite_db_and_csv_import():
     assert res_csv.status_code == 200
     assert res_csv.json()["ingested_count"] == 1
 
+    from services.watch6_ingest.app import _extract_gdrive_file_id, _extract_gdrive_folder_id
+
+    folder_url = "https://drive.google.com/drive/folders/1AbCdEfGhIjKlMnOpQrStUvWxYz?usp=sharing"
+    file_url = "https://drive.google.com/file/d/1XyZ987654321AbCdEfGh/view?usp=sharing"
+    assert _extract_gdrive_folder_id(folder_url) == "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+    assert _extract_gdrive_file_id(folder_url) is None
+    assert _extract_gdrive_file_id(file_url) == "1XyZ987654321AbCdEfGh"
+
 
 def test_reconciliation_rules_and_section6_temporal_window_guard():
     rules_res = client.get("/api/reconciliation/rules")
