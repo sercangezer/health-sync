@@ -477,7 +477,11 @@ def list_scale_measurements(limit: int = 60, db: Session = Depends(get_db)):
 @app.post("/api/measurements/scale/bulk-delete")
 def bulk_delete_scale_measurements(payload: BulkDeletePayload, db: Session = Depends(get_db)):
     ensure_default_config_and_seed(db)
-    return bulk_delete_scale_records(db, ids=payload.ids)
+    res = bulk_delete_scale_records(db, ids=payload.ids)
+    from services.reconciliation.app import reconcile_all_days
+
+    reconcile_all_days(db)
+    return res
 
 
 @app.get("/api/wearables/comparison")

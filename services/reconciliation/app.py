@@ -153,6 +153,13 @@ def reconcile_all_days(db: Session) -> int:
         wearables_by_date.setdefault(w.date, {})[w.device_source] = w
 
     all_dates = sorted(set(scale_by_date.keys()) | set(wearables_by_date.keys()))
+    if not all_dates:
+        db.query(models.DailyHealthSummary).delete(synchronize_session=False)
+        db.commit()
+        return 0
+    db.query(models.DailyHealthSummary).filter(~models.DailyHealthSummary.date.in_(all_dates)).delete(
+        synchronize_session=False
+    )
     reconciled_count = 0
 
     for d_str in all_dates:

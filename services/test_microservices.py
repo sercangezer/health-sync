@@ -89,6 +89,15 @@ def test_renpho_ble_scale_ingest_and_13_metrics():
 
 
 def test_scale_bulk_delete_and_validation():
+    # Database starts clean with zero dummy measurements
+    initial_res = client.get("/api/measurements/scale?limit=5").json()
+    assert initial_res["items"] == []
+
+    # Ingest a real BLE measurement and then delete it
+    client.post(
+        "/api/ingest/ble-scale",
+        json={"timestamp": "2026-10-18T08:30:00Z", "weight_kg": 81.2, "impedance_ohm": 470.0},
+    )
     list_res = client.get("/api/measurements/scale?limit=5").json()
     first_id = list_res["items"][0]["id"]
 
@@ -250,6 +259,60 @@ def test_reconciliation_rules_and_section6_temporal_window_guard():
 
 
 def test_analytics_insights_and_ai_advisor_endpoints():
+    from datetime import date, timedelta
+
+    # Initially pending when no device telemetry exists yet
+    pending_res = client.get("/api/analytics/insights?range=30d")
+    assert pending_res.status_code == 200
+    assert pending_res.json()["window_status"] == "pending"
+
+    # Ingest 3 days of multi-device telemetry within the active cycle
+    today = date.today()
+    for offset, (w, steps, slp, rhr, hrv) in enumerate(
+        [
+            (82.4, 9200, 7.1, 59.0, 49.0),
+            (82.1, 10400, 7.5, 58.0, 52.0),
+            (81.8, 11100, 7.8, 57.0, 55.0),
+        ]
+    ):
+        d_str = (today - timedelta(days=2 - offset)).isoformat()
+        client.post(
+            "/api/ingest/ble-scale",
+            json={"timestamp": f"{d_str}T07:30:00Z", "weight_kg": w, "impedance_ohm": 475.0},
+        )
+        client.post(
+            "/api/ingest/webhook",
+            json={
+                "device_source": "galaxy_watch6",
+                "records": [
+                    {
+                        "date": d_str,
+                        "steps": steps,
+                        "sleep_hours": slp,
+                        "resting_hr_bpm": rhr,
+                        "hrv_ms": hrv,
+                    }
+                ],
+            },
+        )
+        client.post(
+            "/api/ingest/webhook",
+            json={
+                "device_source": "garmin_band",
+                "records": [
+                    {
+                        "date": d_str,
+                        "steps": steps - 150,
+                        "sleep_hours": slp + 0.1,
+                        "resting_hr_bpm": rhr - 0.5,
+                        "hrv_ms": hrv + 1.0,
+                        "stress_score": 28.0 - offset,
+                        "body_battery_max": 90 + offset,
+                    }
+                ],
+            },
+        )
+
     insights_res = client.get("/api/analytics/insights?range=30d")
     assert insights_res.status_code == 200
     ins = insights_res.json()
@@ -262,13 +325,18 @@ def test_analytics_insights_and_ai_advisor_endpoints():
     assert prompts_res.status_code == 200
     assert "Renpho ES-26BB-B" in prompts_res.json()["prompt_text"]
 
+    # Initially empty before generating an AI report
+    empty_reports = client.get("/api/ai/reports")
+    assert empty_reports.status_code == 200
+    assert empty_reports.json()["items"] == []
+
     ai_res = client.post("/api/ai/analyze", json={"focus_area": "holistic"})
     assert ai_res.status_code == 200
     assert "Vücut Kompozisyonu" in ai_res.json()["summary_markdown"]
 
     reports_res = client.get("/api/ai/reports")
     assert reports_res.status_code == 200
-    assert len(reports_res.json()["items"]) >= 1
+    assert len(reports_res.json()["items"]) == 1
 
     bad_ai = client.post("/api/ai/analyze", json={"focus_area": "invalid_topic"})
     assert bad_ai.status_code == 400
@@ -353,16 +421,16 @@ def test_integration_settings_and_webhook_heartbeat_monitor():
     )
     assert bad_cfg.status_code == 400
 
-    # Check webhook heartbeat monitor
+    # Check webhook heartbeat monitor (starts in 'waiting' state before any signal arrives)
     hb_res = client.get("/api/webhook/heartbeat")
     assert hb_res.status_code == 200
     hb = hb_res.json()
-    assert hb["overall_status"] == "healthy"
+    assert hb["overall_status"] == "waiting"
     assert hb["expected_interval_minutes"] == 45
     assert len(hb["sources"]) == 3
-    initial_hb_count = hb["total_heartbeats_24h"]
+    assert hb["total_heartbeats_24h"] == 0
 
-    # Send a live webhook heartbeat probe
+    # Send a live webhook heartbeat probe -> transitions to 'healthy'
     ping_res = client.post(
         "/api/webhook/heartbeat",
         json={
@@ -376,7 +444,8 @@ def test_integration_settings_and_webhook_heartbeat_monitor():
     )
     assert ping_res.status_code == 200
     ping_body = ping_res.json()
-    assert ping_body["total_heartbeats_24h"] == initial_hb_count + 1
+    assert ping_body["overall_status"] == "healthy"
+    assert ping_body["total_heartbeats_24h"] == 1
     assert ping_body["recent_heartbeats"][0]["payload_summary"] == "Canlı Tasker heartbeat yoklaması"
 
     # Reject unknown heartbeat source

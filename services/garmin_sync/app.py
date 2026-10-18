@@ -73,6 +73,25 @@ def upsert_garmin_daily_records(db: Session, records: List[Dict[str, Any]]) -> i
         existing.updated_at = datetime.now(timezone.utc)
         count += 1
 
+    db.add(
+        models.SyncLog(
+            provider="garmin",
+            status="nominal",
+            records_processed=count,
+            message=f"Garmin Smart Band kaynağından {count} günlük kayıt işlendi.",
+        )
+    )
+    db.add(
+        models.WebhookHeartbeat(
+            source="garmin_band",
+            device_label="Garmin Smart Band (Connect Bridge)",
+            event_type="webhook_ingest",
+            status="healthy",
+            records_received=count,
+            latency_ms=1.7,
+            payload_summary=f"Garmin Smart Band üzerinden {count} günlük kayıt alındı.",
+        )
+    )
     db.commit()
     return count
 
@@ -85,63 +104,88 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
     int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
     email = (int_cfg.garmin_email if int_cfg and int_cfg.garmin_email else os.getenv("GARMIN_EMAIL", "")).strip()
     password = (int_cfg.garmin_password if int_cfg and int_cfg.garmin_password else os.getenv("GARMIN_PASSWORD", "")).strip()
+
+    if not (email and password):
+        total_garmin = (
+            db.query(models.DeviceDailyMetric)
+            .filter(models.DeviceDailyMetric.device_source == "garmin_band")
+            .count()
+        )
+        msg = (
+            f"Garmin Connect hesabı tanımlı değil (mevcut kayıt: {total_garmin}). "
+            "Ayarlar sekmesinden Garmin e-posta ve parolanızı kaydedin."
+        )
+        db.add(
+            models.SyncLog(
+                provider="garmin",
+                status="waiting",
+                records_processed=0,
+                message=msg,
+            )
+        )
+        db.commit()
+        return {"status": "waiting", "provider": "garmin", "records_processed": 0, "message": msg}
+
     synced = 0
+    try:
+        from garminconnect import Garmin  # type: ignore
 
-    if email and password:
-        try:
-            from garminconnect import Garmin  # type: ignore
+        api = Garmin(email, password)
+        api.login()
+        today = date.today()
+        batch: List[Dict[str, Any]] = []
+        for offset in range(14):
+            d_str = (today - timedelta(days=offset)).isoformat()
+            stats = api.get_stats(d_str) or {}
+            hr = api.get_heart_rates(d_str) or {}
+            sleep = (api.get_sleep_data(d_str) or {}).get("dailySleepDTO", {})
+            sleep_sec = float(sleep.get("sleepTimeSeconds") or 0)
+            total_steps = int(stats.get("totalSteps") or 0)
+            rhr = hr.get("restingHeartRate")
+            if total_steps <= 0 and sleep_sec <= 0 and rhr is None:
+                continue
+            batch.append(
+                {
+                    "date": d_str,
+                    "steps": total_steps,
+                    "active_calories_kcal": float(stats.get("activeKilocalories") or 0.0),
+                    "total_calories_kcal": float(stats.get("totalKilocalories") or 0.0),
+                    "resting_hr_bpm": rhr,
+                    "min_hr_bpm": hr.get("minHeartRate"),
+                    "max_hr_bpm": hr.get("maxHeartRate"),
+                    "sleep_hours": round(sleep_sec / 3600.0, 2) if sleep_sec > 0 else None,
+                    "deep_sleep_hours": round(float(sleep.get("deepSleepSeconds") or 0) / 3600.0, 2),
+                    "light_sleep_hours": round(float(sleep.get("lightSleepSeconds") or 0) / 3600.0, 2),
+                    "rem_sleep_hours": round(float(sleep.get("remSleepSeconds") or 0) / 3600.0, 2),
+                    "sleep_score": (sleep.get("sleepScores", {}).get("overall", {}) or {}).get("value"),
+                    "stress_score": stats.get("averageStressLevel"),
+                    "body_battery_max": stats.get("bodyBatteryHighestValue"),
+                    "body_battery_min": stats.get("bodyBatteryLowestValue"),
+                    "spo2_pct": stats.get("averageSpo2"),
+                }
+            )
+        if batch:
+            synced = upsert_garmin_daily_records(db, batch)
+    except Exception as exc:
+        logger.warning(f"Garmin Connect cloud sync failed: {exc}")
+        err_msg = f"Garmin Connect bağlantısı başarısız: {exc}"
+        db.add(
+            models.SyncLog(
+                provider="garmin",
+                status="degraded",
+                records_processed=0,
+                message=err_msg,
+            )
+        )
+        db.commit()
+        return {"status": "degraded", "provider": "garmin", "records_processed": 0, "message": err_msg}
 
-            api = Garmin(email, password)
-            api.login()
-            today = date.today()
-            batch: List[Dict[str, Any]] = []
-            for offset in range(7):
-                d_str = (today - timedelta(days=offset)).isoformat()
-                stats = api.get_stats(d_str) or {}
-                hr = api.get_heart_rates(d_str) or {}
-                sleep = (api.get_sleep_data(d_str) or {}).get("dailySleepDTO", {})
-                sleep_sec = float(sleep.get("sleepTimeSeconds") or 0)
-                batch.append(
-                    {
-                        "date": d_str,
-                        "steps": int(stats.get("totalSteps") or 0),
-                        "active_calories_kcal": float(stats.get("activeKilocalories") or 0.0),
-                        "total_calories_kcal": float(stats.get("totalKilocalories") or 0.0),
-                        "resting_hr_bpm": hr.get("restingHeartRate"),
-                        "min_hr_bpm": hr.get("minHeartRate"),
-                        "max_hr_bpm": hr.get("maxHeartRate"),
-                        "sleep_hours": round(sleep_sec / 3600.0, 2) if sleep_sec > 0 else None,
-                        "deep_sleep_hours": round(float(sleep.get("deepSleepSeconds") or 0) / 3600.0, 2),
-                        "light_sleep_hours": round(float(sleep.get("lightSleepSeconds") or 0) / 3600.0, 2),
-                        "rem_sleep_hours": round(float(sleep.get("remSleepSeconds") or 0) / 3600.0, 2),
-                        "sleep_score": (sleep.get("sleepScores", {}).get("overall", {}) or {}).get("value"),
-                        "stress_score": stats.get("averageStressLevel"),
-                        "body_battery_max": stats.get("bodyBatteryHighestValue"),
-                        "body_battery_min": stats.get("bodyBatteryLowestValue"),
-                        "spo2_pct": stats.get("averageSpo2"),
-                    }
-                )
-            if batch:
-                synced = upsert_garmin_daily_records(db, batch)
-        except Exception as exc:
-            logger.warning(f"Garmin Connect cloud sync fallback engaged: {exc}")
-
-    total_garmin = (
-        db.query(models.DeviceDailyMetric)
-        .filter(models.DeviceDailyMetric.device_source == "garmin_band")
-        .count()
-    )
-    processed = synced if synced > 0 else total_garmin
-    msg = (
-        f"Garmin Smart Band bulut senkronizasyonu tamamlandı ({processed} günlük kayıt)."
-        if email
-        else f"Garmin Smart Band telemetri havuzu doğrulandı ({processed} günlük kayıt aktif)."
-    )
+    msg = f"Garmin Smart Band bulut senkronizasyonu tamamlandı ({synced} günlük kayıt çekildi)."
     db.add(
         models.SyncLog(
             provider="garmin",
             status="nominal",
-            records_processed=processed,
+            records_processed=synced,
             message=msg,
         )
     )
@@ -149,15 +193,15 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
         models.WebhookHeartbeat(
             source="garmin_band",
             device_label="Garmin Smart Band (Connect Bridge)",
-            event_type="heartbeat",
+            event_type="cloud_sync",
             status="healthy",
-            records_received=processed,
+            records_received=synced,
             latency_ms=1.9,
             payload_summary=msg,
         )
     )
     db.commit()
-    return {"status": "nominal", "provider": "garmin", "records_processed": processed, "message": msg}
+    return {"status": "nominal", "provider": "garmin", "records_processed": synced, "message": msg}
 
 
 @app.get("/health")

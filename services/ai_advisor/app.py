@@ -171,10 +171,6 @@ def list_ai_reports_data(db: Session) -> Dict[str, Any]:
         .limit(25)
         .all()
     )
-    if not rows:
-        first = generate_ai_report(db, focus_area="holistic")
-        return {"items": [first]}
-
     return {
         "items": [
             {
