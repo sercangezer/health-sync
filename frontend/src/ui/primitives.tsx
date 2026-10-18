@@ -317,7 +317,7 @@ export function StateBlock({
 }) {
   const iconName = state === 'error' ? 'error' : state === 'loading' ? 'hourglass_empty' : 'inbox';
   return (
-    <div className="hs-state-block" role={state === 'error' ? 'alert' : 'status'}>
+    <div className="hs-state-block" data-testid={`state-${state}`} role={state === 'error' ? 'alert' : 'status'}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
         <Icon name={iconName} />
         <strong style={{ color: 'var(--color-text-main)' }}>{title}</strong>
@@ -354,5 +354,9 @@ export function Panel({
 }
 
 export function CodeBlock({ content }: { content: string }) {
-  return <pre className="hs-code-block">{content}</pre>;
+  return (
+    <pre className="hs-code-block" tabIndex={0} role="region" aria-label="Kod ve rapor çıktısı">
+      {content}
+    </pre>
+  );
 }

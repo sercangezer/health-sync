@@ -2,7 +2,7 @@ name: HealthSync Self-Hosted CI
 
 on:
   push:
-    branches: [master, main, "feat/**", "fix/**", "gelistirme/**"]
+    branches: [master, main]
   pull_request:
     branches: [master, main]
 
