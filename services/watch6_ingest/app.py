@@ -400,6 +400,7 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
             (
                 "steps",
                 [
+                    "SELECT local_date, MAX(app_steps) FROM (SELECT local_date, app_info_id, SUM(count) AS app_steps FROM steps_record_table GROUP BY local_date, app_info_id) GROUP BY local_date",
                     "SELECT local_date, SUM(count) FROM steps_record_table GROUP BY local_date",
                     "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(count) FROM steps_record_table GROUP BY 1",
                 ],
@@ -407,6 +408,7 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
             (
                 "active_calories_kcal",
                 [
+                    "SELECT local_date, MAX(app_energy) FROM (SELECT local_date, app_info_id, SUM(energy) AS app_energy FROM active_calories_burned_record_table GROUP BY local_date, app_info_id) GROUP BY local_date",
                     "SELECT local_date, SUM(energy) FROM active_calories_burned_record_table GROUP BY local_date",
                     "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(energy) FROM active_calories_burned_record_table GROUP BY 1",
                 ],
@@ -414,6 +416,7 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
             (
                 "total_calories_kcal",
                 [
+                    "SELECT local_date, MAX(app_energy) / 1000.0 FROM (SELECT local_date, app_info_id, SUM(energy) AS app_energy FROM total_calories_burned_record_table GROUP BY local_date, app_info_id) GROUP BY local_date",
                     "SELECT local_date, SUM(energy) / 1000.0 FROM total_calories_burned_record_table GROUP BY local_date",
                     "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(energy) / 1000.0 FROM total_calories_burned_record_table GROUP BY 1",
                 ],
@@ -426,6 +429,18 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
                 ],
             ),
             (
+                "min_hr_bpm",
+                [
+                    "SELECT h.local_date, MIN(s.beats_per_minute) FROM heart_rate_record_table h JOIN heart_rate_record_series_table s ON s.parent_key = h.row_id GROUP BY h.local_date",
+                ],
+            ),
+            (
+                "max_hr_bpm",
+                [
+                    "SELECT h.local_date, MAX(s.beats_per_minute) FROM heart_rate_record_table h JOIN heart_rate_record_series_table s ON s.parent_key = h.row_id GROUP BY h.local_date",
+                ],
+            ),
+            (
                 "hrv_ms",
                 [
                     "SELECT local_date, AVG(heart_rate_variability_millis) FROM heart_rate_variability_rmssd_record_table GROUP BY local_date",
@@ -435,8 +450,31 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
             (
                 "sleep_hours",
                 [
+                    "SELECT s.local_date, SUM(s.end_time - s.start_time) / 3600000.0 FROM sleep_session_record_table s JOIN application_info_table a ON s.app_info_id = a.row_id WHERE a.package_name LIKE '%shealth%' GROUP BY s.local_date",
+                    "SELECT local_date, MAX(app_sleep) FROM (SELECT local_date, app_info_id, SUM(end_time - start_time) / 3600000.0 AS app_sleep FROM sleep_session_record_table GROUP BY local_date, app_info_id) GROUP BY local_date",
                     "SELECT local_date, SUM(end_time - start_time) / 3600000.0 FROM sleep_session_record_table GROUP BY local_date",
                     "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(end_time - start_time) / 3600000.0 FROM sleep_session_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "light_sleep_hours",
+                [
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id JOIN application_info_table a ON s.app_info_id = a.row_id WHERE st.stage_type = 4 AND a.package_name LIKE '%shealth%' GROUP BY s.local_date",
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id WHERE st.stage_type = 4 GROUP BY s.local_date",
+                ],
+            ),
+            (
+                "deep_sleep_hours",
+                [
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id JOIN application_info_table a ON s.app_info_id = a.row_id WHERE st.stage_type = 5 AND a.package_name LIKE '%shealth%' GROUP BY s.local_date",
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id WHERE st.stage_type = 5 GROUP BY s.local_date",
+                ],
+            ),
+            (
+                "rem_sleep_hours",
+                [
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id JOIN application_info_table a ON s.app_info_id = a.row_id WHERE st.stage_type = 6 AND a.package_name LIKE '%shealth%' GROUP BY s.local_date",
+                    "SELECT s.local_date, SUM(st.stage_end_time - st.stage_start_time) / 3600000.0 FROM sleep_stages_table st JOIN sleep_session_record_table s ON st.parent_key = s.row_id WHERE st.stage_type = 6 GROUP BY s.local_date",
                 ],
             ),
             (
@@ -460,6 +498,13 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
                     "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(volume) FROM hydration_record_table GROUP BY 1",
                 ],
             ),
+            (
+                "exercise_minutes",
+                [
+                    "SELECT local_date, CAST(MAX(app_mins) AS INTEGER) FROM (SELECT local_date, app_info_id, SUM(end_time - start_time) / 60000.0 AS app_mins FROM exercise_session_record_table GROUP BY local_date, app_info_id) GROUP BY local_date",
+                    "SELECT local_date, CAST(SUM(end_time - start_time) / 60000.0 AS INTEGER) FROM exercise_session_record_table GROUP BY local_date",
+                ],
+            ),
         ]
         for key, sql_candidates in queries:
             for sql in sql_candidates:
@@ -480,9 +525,16 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
 
         epoch = datetime(1970, 1, 1)
         records: List[Dict[str, Any]] = []
-        for local_date, metrics in sorted(data_map.items()):
+        for local_date, metrics in sorted(data_map.items())[-180:]:
             d_str = (epoch + timedelta(days=int(local_date))).strftime("%Y-%m-%d")
             metrics["date"] = d_str
+            if "steps" in metrics and metrics["steps"] is not None:
+                metrics["steps"] = min(150000, max(0, int(metrics["steps"])))
+            if "active_calories_kcal" in metrics and metrics["active_calories_kcal"] is not None:
+                ac = float(metrics["active_calories_kcal"])
+                metrics["active_calories_kcal"] = round(ac / 1000.0, 1) if ac > 5000 else round(ac, 1)
+            if "sleep_hours" in metrics and metrics["sleep_hours"] is not None:
+                metrics["sleep_hours"] = round(min(24.0, max(0.0, float(metrics["sleep_hours"]))), 2)
             records.append(metrics)
 
         if not records:
@@ -594,10 +646,19 @@ def _extract_gdrive_file_id(url_or_path: str) -> str | None:
 
 
 def _download_gdrive_file_bytes(file_id: str) -> bytes:
-    download_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
-    req = urllib.request.Request(download_url, headers={"User-Agent": "HealthSync/1.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return resp.read()
+    urls = (
+        f"https://drive.usercontent.google.com/download?id={file_id}&export=download&confirm=t",
+        f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t",
+    )
+    last_data = b""
+    for download_url in urls:
+        req = urllib.request.Request(download_url, headers={"User-Agent": "Mozilla/5.0 HealthSync/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = resp.read()
+        if data.startswith(b"PK\x03\x04") or data.startswith(b"SQLite format 3\x00"):
+            return data
+        last_data = data
+    return last_data
 
 
 def _list_gdrive_folder_file_ids(folder_id: str) -> List[str]:
