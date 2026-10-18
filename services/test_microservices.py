@@ -452,3 +452,18 @@ def test_integration_settings_and_webhook_heartbeat_monitor():
     bad_hb = client.post("/api/webhook/heartbeat", json={"source": "unknown_device"})
     assert bad_hb.status_code == 400
 
+    # Enforce X-Webhook-Secret when webhook_secret is configured
+    unauth_wh = client.post(
+        "/api/ingest/webhook",
+        json={"device_source": "galaxy_watch6", "records": [{"date": "2026-10-18", "steps": 9200}]},
+    )
+    assert unauth_wh.status_code == 401
+
+    auth_wh = client.post(
+        "/api/ingest/webhook",
+        headers={"X-Webhook-Secret": "wh-secret-123"},
+        json={"device_source": "galaxy_watch6", "records": [{"date": "2026-10-18", "steps": 9200}]},
+    )
+    assert auth_wh.status_code == 200
+    assert auth_wh.json()["ingested_count"] == 1
+

@@ -1,12 +1,13 @@
 import base64
 import csv
+import hmac
 import io
 import os
 import sqlite3
 import tempfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from sqlalchemy.orm import Session
 from services.common import models
 from services.common.database import get_db
@@ -542,13 +543,46 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
     return {"status": "nominal", "provider": "watch6", "records_processed": imported, "message": msg}
 
 
+def verify_webhook_secret_if_configured(db: Session, provided_secret: str | None) -> None:
+    cfg = get_or_create_integration_settings(db)
+    expected = (cfg.webhook_secret or os.getenv("WEBHOOK_SECRET_TOKEN", "")).strip()
+    if not expected:
+        return
+    candidate = str(provided_secret or "").strip()
+    if candidate.lower().startswith("bearer "):
+        candidate = candidate[7:].strip()
+    if not candidate or not hmac.compare_digest(candidate, expected):
+        db.add(
+            models.WebhookHeartbeat(
+                source="galaxy_watch6",
+                device_label="Samsung Galaxy Watch6 (Health Connect Webhook)",
+                event_type="auth_rejected",
+                status="degraded",
+                records_received=0,
+                latency_ms=0.0,
+                payload_summary="Yetkisiz webhook isteği reddedildi (Geçersiz veya eksik X-Webhook-Secret).",
+            )
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail="Geçersiz veya eksik Webhook güvenlik anahtarı (X-Webhook-Secret / Bearer Token).",
+        )
+
+
 @app.get("/health")
 def health():
     return {"service": "watch6-ingest-service", "status": "healthy"}
 
 
 @app.post("/webhook")
-def webhook_ingest(payload: Dict[str, Any], db: Session = Depends(get_db)):
+def webhook_ingest(payload: Dict[str, Any], request: Request, db: Session = Depends(get_db)):
+    header_secret = (
+        request.headers.get("X-Webhook-Secret")
+        or request.headers.get("Authorization")
+        or payload.get("webhook_secret")
+    )
+    verify_webhook_secret_if_configured(db, header_secret)
     source = str(payload.get("device_source") or "galaxy_watch6").strip()
     records = payload.get("records")
     if not isinstance(records, list):
