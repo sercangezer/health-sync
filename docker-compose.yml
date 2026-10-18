@@ -1,0 +1,241 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-healthsync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-healthsync_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-healthsync}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-healthsync} -d ${POSTGRES_DB:-healthsync}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  renpho-sync:
+    image: health-sync-backend:latest
+    build:
+      context: .
+      dockerfile: services/Dockerfile
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.renpho_sync.app:app
+      SERVICE_PORT: "8001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      RENPHO_EMAIL: ${RENPHO_EMAIL:-}
+      RENPHO_PASSWORD: ${RENPHO_PASSWORD:-}
+      USER_HEIGHT_CM: ${USER_HEIGHT_CM:-180}
+      USER_AGE: ${USER_AGE:-34}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  garmin-sync:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.garmin_sync.app:app
+      SERVICE_PORT: "8002"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      GARMIN_EMAIL: ${GARMIN_EMAIL:-}
+      GARMIN_PASSWORD: ${GARMIN_PASSWORD:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  watch6-ingest:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.watch6_ingest.app:app
+      SERVICE_PORT: "8003"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      WATCH_EXPORT_DIR: /data/watch6_exports
+    volumes:
+      - watch6_exports:/data/watch6_exports
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  reconciliation:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.reconciliation.app:app
+      SERVICE_PORT: "8004"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      renpho-sync:
+        condition: service_healthy
+      garmin-sync:
+        condition: service_healthy
+      watch6-ingest:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8004/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  analytics-anomaly:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.analytics_anomaly.app:app
+      SERVICE_PORT: "8005"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      reconciliation:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-advisor:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.ai_advisor.app:app
+      SERVICE_PORT: "8006"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+    depends_on:
+      db:
+        condition: service_healthy
+      analytics-anomaly:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scheduler:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    environment:
+      SERVICE_MODULE: services.scheduler.app:app
+      SERVICE_PORT: "8007"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      RENPHO_SYNC_URL: http://renpho-sync:8001
+      GARMIN_SYNC_URL: http://garmin-sync:8002
+      WATCH6_INGEST_URL: http://watch6-ingest:8003
+      RECONCILIATION_URL: http://reconciliation:8004
+      ANALYTICS_URL: http://analytics-anomaly:8005
+      AI_ADVISOR_URL: http://ai-advisor:8006
+    depends_on:
+      db:
+        condition: service_healthy
+      reconciliation:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8007/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api-gateway:
+    image: health-sync-backend:latest
+    restart: unless-stopped
+    ports:
+      - "${API_GATEWAY_PORT:-8996}:8000"
+    environment:
+      SERVICE_MODULE: services.api_gateway.app:app
+      SERVICE_PORT: "8000"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-healthsync}:${POSTGRES_PASSWORD:-healthsync_pass}@db:5432/${POSTGRES_DB:-healthsync}
+      REDIS_URL: redis://redis:6379/0
+      RENPHO_SYNC_URL: http://renpho-sync:8001
+      GARMIN_SYNC_URL: http://garmin-sync:8002
+      WATCH6_INGEST_URL: http://watch6-ingest:8003
+      RECONCILIATION_URL: http://reconciliation:8004
+      ANALYTICS_URL: http://analytics-anomaly:8005
+      AI_ADVISOR_URL: http://ai-advisor:8006
+      SCHEDULER_URL: http://scheduler:8007
+    depends_on:
+      db:
+        condition: service_healthy
+      renpho-sync:
+        condition: service_healthy
+      garmin-sync:
+        condition: service_healthy
+      watch6-ingest:
+        condition: service_healthy
+      reconciliation:
+        condition: service_healthy
+      analytics-anomaly:
+        condition: service_healthy
+      ai-advisor:
+        condition: service_healthy
+      scheduler:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-8997}:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  watch6_exports:
