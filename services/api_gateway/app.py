@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -29,6 +29,7 @@ from services.watch6_ingest.app import (
     serialize_integration_settings,
     update_integration_settings,
     upsert_watch6_daily_records,
+    verify_webhook_secret_if_configured,
 )
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
@@ -73,6 +74,7 @@ class SyncTriggerPayload(BaseModel):
 class WebhookIngestPayload(BaseModel):
     device_source: str
     records: List[Dict[str, Any]]
+    webhook_secret: str | None = None
 
 
 class BleScalePayload(BaseModel):
@@ -198,8 +200,14 @@ def trigger_sync(payload: SyncTriggerPayload, db: Session = Depends(get_db)):
 
 
 @app.post("/api/ingest/webhook")
-def ingest_webhook(payload: WebhookIngestPayload, db: Session = Depends(get_db)):
+def ingest_webhook(payload: WebhookIngestPayload, request: Request, db: Session = Depends(get_db)):
     ensure_default_config_and_seed(db)
+    header_secret = (
+        request.headers.get("X-Webhook-Secret")
+        or request.headers.get("Authorization")
+        or payload.webhook_secret
+    )
+    verify_webhook_secret_if_configured(db, header_secret)
 
     def _op():
         count = upsert_watch6_daily_records(db, payload.records, source=payload.device_source)
@@ -209,12 +217,16 @@ def ingest_webhook(payload: WebhookIngestPayload, db: Session = Depends(get_db))
             "message": f"{payload.device_source} kaynağından {count} kayıt otomatik işlendi.",
         }
 
+    forwarded_body = payload.model_dump()
+    if header_secret:
+        forwarded_body["webhook_secret"] = header_secret
+
     return registry.call_http_or_local(
         service_name="watch6-ingest-service",
         base_url=os.getenv("WATCH6_SERVICE_URL"),
         method="POST",
         path="/webhook",
-        json_body=payload.model_dump(),
+        json_body=forwarded_body,
         local_handler=_op,
     )
 
