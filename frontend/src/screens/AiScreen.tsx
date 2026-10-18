@@ -80,25 +80,13 @@ export function AiScreen({
 
   const handleSimulateWatch6Webhook = async () => {
     try {
-      const res = await apiClient.ingestWebhook({
-        device_source: 'galaxy_watch6',
-        records: [
-          {
-            date: '2026-10-18',
-            steps: 10840,
-            active_calories_kcal: 492.0,
-            resting_hr_bpm: 57.0,
-            hrv_ms: 55.2,
-            sleep_hours: 7.45,
-            sleep_score: 87.0,
-            spo2_pct: 97.6,
-          },
-        ],
+      const res = await apiClient.triggerSync({
+        provider: 'watch6',
       });
       setToastMsg(res.message);
       await loadAiBundle();
     } catch (err: any) {
-      setToastMsg(err?.message || 'Webhook gönderimi başarısız oldu.');
+      setToastMsg(err?.message || 'Watch6 senkronizasyon kontrolü başarısız oldu.');
     }
   };
 

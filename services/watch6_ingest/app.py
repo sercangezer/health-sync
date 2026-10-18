@@ -488,18 +488,33 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
             except Exception as exc:
                 logger.warning(f"Skipped invalid export file {fname}: {exc}")
 
-    total_watch6 = (
-        db.query(models.DeviceDailyMetric)
-        .filter(models.DeviceDailyMetric.device_source == "galaxy_watch6")
-        .count()
-    )
-    processed = imported if imported > 0 else total_watch6
-    msg = f"Samsung Galaxy Watch6 (Health Connect) senkronizasyonu tamamlandı ({processed} günlük kayıt aktif)."
+    if imported == 0:
+        total_watch6 = (
+            db.query(models.DeviceDailyMetric)
+            .filter(models.DeviceDailyMetric.device_source == "galaxy_watch6")
+            .count()
+        )
+        msg = (
+            f"Samsung Galaxy Watch6 dışa aktarım klasöründe ({export_dir}) yeni dosya bulunmadı "
+            f"(mevcut kayıt: {total_watch6}, Webhook aktif dinlemede)."
+        )
+        db.add(
+            models.SyncLog(
+                provider="watch6",
+                status="waiting",
+                records_processed=0,
+                message=msg,
+            )
+        )
+        db.commit()
+        return {"status": "waiting", "provider": "watch6", "records_processed": 0, "message": msg}
+
+    msg = f"Samsung Galaxy Watch6 (Health Connect) klasör senkronizasyonu tamamlandı ({imported} günlük kayıt işlendi)."
     db.add(
         models.SyncLog(
             provider="watch6",
             status="nominal",
-            records_processed=processed,
+            records_processed=imported,
             message=msg,
         )
     )
@@ -507,15 +522,15 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
         models.WebhookHeartbeat(
             source="galaxy_watch6",
             device_label="Samsung Galaxy Watch6 (Health Connect)",
-            event_type="heartbeat",
+            event_type="file_sync",
             status="healthy",
-            records_received=processed,
+            records_received=imported,
             latency_ms=1.5,
             payload_summary=msg,
         )
     )
     db.commit()
-    return {"status": "nominal", "provider": "watch6", "records_processed": processed, "message": msg}
+    return {"status": "nominal", "provider": "watch6", "records_processed": imported, "message": msg}
 
 
 @app.get("/health")

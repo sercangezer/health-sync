@@ -23,14 +23,12 @@ export function ScaleScreen({
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [bleModalOpen, setBleModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const [weightInput, setWeightInput] = useState('82.10');
-  const [impedanceInput, setImpedanceInput] = useState('475');
+  const [weightInput, setWeightInput] = useState('');
+  const [impedanceInput, setImpedanceInput] = useState('');
   const [weightError, setWeightError] = useState<string | undefined>(undefined);
   const [importFormat, setImportFormat] = useState('csv');
   const [importDevice, setImportDevice] = useState('galaxy_watch6');
-  const [csvContent, setCsvContent] = useState(
-    'date,steps,sleep_hours,resting_hr_bpm,hrv_ms\n2026-10-18,10950,7.4,57.5,54.0'
-  );
+  const [csvContent, setCsvContent] = useState('');
 
   const loadScale = useCallback(async () => {
     if (forcedState === 'error') {
@@ -76,6 +74,18 @@ export function ScaleScreen({
 
   const handleImportFile = async () => {
     try {
+      if (importFormat === 'json') {
+        const parsed = JSON.parse(csvContent || '[]');
+        const records = Array.isArray(parsed) ? parsed : [parsed];
+        const res = await apiClient.ingestWebhook({
+          device_source: importDevice,
+          records,
+        });
+        setToastMsg(res.message);
+        setImportModalOpen(false);
+        await loadScale();
+        return;
+      }
       const encoded = window.btoa(unescape(encodeURIComponent(csvContent)));
       const res = await apiClient.importHealthFile({
         file_name: `manual_import.${importFormat}`,

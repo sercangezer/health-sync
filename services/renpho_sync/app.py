@@ -104,6 +104,17 @@ def upsert_scale_measurement(db: Session, payload: Dict[str, Any]) -> models.Sca
             message=f"Renpho ES-26BB-B ölçümü kaydedildi ({normalized['weight_kg']} kg, kaynak: {normalized['source']}).",
         )
     )
+    db.add(
+        models.WebhookHeartbeat(
+            source="renpho_es26bb",
+            device_label="Renpho Body Fat Scale ES-26BB-B",
+            event_type="ble_ingest" if "ble" in str(normalized["source"]) else "cloud_sync",
+            status="healthy",
+            records_received=1,
+            latency_ms=1.2,
+            payload_summary=f"Renpho ES-26BB-B ölçümü ({normalized['weight_kg']} kg) alındı.",
+        )
+    )
     db.commit()
     db.refresh(record)
     return record
@@ -111,69 +122,85 @@ def upsert_scale_measurement(db: Session, payload: Dict[str, Any]) -> models.Sca
 
 def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
     """
-    Synchronizes measurements from Renpho Cloud if RENPHO_EMAIL and RENPHO_PASSWORD
-    are configured; otherwise validates existing ES-26BB-B telemetry.
+    Synchronizes measurements from Renpho Cloud when RENPHO_EMAIL and RENPHO_PASSWORD
+    are configured. Does not generate synthetic records or fake heartbeats when unconfigured.
     """
     int_cfg = db.query(models.IntegrationSettings).filter(models.IntegrationSettings.id == 1).first()
     email = (int_cfg.renpho_email if int_cfg and int_cfg.renpho_email else os.getenv("RENPHO_EMAIL", "")).strip()
     password = (int_cfg.renpho_password if int_cfg and int_cfg.renpho_password else os.getenv("RENPHO_PASSWORD", "")).strip()
+
+    if not (email and password):
+        total_count = db.query(models.ScaleMeasurement).count()
+        msg = (
+            f"Renpho bulut hesabı tanımlı değil (mevcut yerel/BLE kayıt: {total_count}). "
+            "Ayarlar sekmesinden Renpho e-posta ve parolanızı kaydedin veya BLE ile ölçüm alın."
+        )
+        db.add(
+            models.SyncLog(
+                provider="renpho",
+                status="waiting",
+                records_processed=0,
+                message=msg,
+            )
+        )
+        db.commit()
+        return {"status": "waiting", "provider": "renpho", "records_processed": 0, "message": msg}
+
     added = 0
+    try:
+        from renpho import RenphoClient  # type: ignore
 
-    if email and password:
-        try:
-            from renpho import RenphoClient  # type: ignore
+        client = RenphoClient(email, password)
+        client.login()
+        raw_items = client.get_all_measurements()
+        for m in raw_items[:90]:
+            ts_epoch = m.get("timeStamp") or m.get("time_stamp") or m.get("timeary")
+            if not ts_epoch:
+                continue
+            ts_val = int(ts_epoch)
+            if ts_val > 10**12:
+                ts_val //= 1000
+            dt = datetime.fromtimestamp(ts_val, tz=timezone.utc)
+            upsert_scale_measurement(
+                db,
+                {
+                    "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "source": "renpho_es26bb",
+                    "weight_kg": m.get("weight"),
+                    "body_fat_pct": m.get("bodyfat"),
+                    "muscle_mass_kg": m.get("muscle"),
+                    "bone_mass_kg": m.get("bone"),
+                    "water_pct": m.get("water"),
+                    "subcutaneous_fat_pct": m.get("subfat"),
+                    "visceral_fat": m.get("visfat"),
+                    "bmr_kcal": m.get("bmr"),
+                    "protein_pct": m.get("protein"),
+                    "metabolic_age": m.get("bodyage"),
+                    "fat_free_weight_kg": m.get("fatFreeWeight"),
+                    "sinew_mass_kg": m.get("sinew"),
+                },
+            )
+            added += 1
+    except Exception as exc:
+        logger.warning(f"Renpho cloud sync failed: {exc}")
+        err_msg = f"Renpho bulut bağlantısı başarısız: {exc}"
+        db.add(
+            models.SyncLog(
+                provider="renpho",
+                status="degraded",
+                records_processed=0,
+                message=err_msg,
+            )
+        )
+        db.commit()
+        return {"status": "degraded", "provider": "renpho", "records_processed": 0, "message": err_msg}
 
-            client = RenphoClient(email, password)
-            client.login()
-            device_info = client.get_device_info()
-            scales = device_info.get("scale", [])
-            if scales:
-                table = scales[0]
-                raw_items = client.get_measurements(
-                    table_name=table["tableName"],
-                    user_id=client.user_id,
-                    total_count=table.get("count", 0),
-                )
-                for m in raw_items[:60]:
-                    ts_epoch = m.get("timeary") or m.get("timeStamp")
-                    if not ts_epoch:
-                        continue
-                    dt = datetime.fromtimestamp(int(ts_epoch), tz=timezone.utc)
-                    upsert_scale_measurement(
-                        db,
-                        {
-                            "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                            "source": "renpho_es26bb",
-                            "weight_kg": m.get("weight"),
-                            "body_fat_pct": m.get("bodyfat"),
-                            "muscle_mass_kg": m.get("muscle"),
-                            "bone_mass_kg": m.get("bone"),
-                            "water_pct": m.get("water"),
-                            "subcutaneous_fat_pct": m.get("subfat"),
-                            "visceral_fat": m.get("visfat"),
-                            "bmr_kcal": m.get("bmr"),
-                            "protein_pct": m.get("protein"),
-                            "metabolic_age": m.get("bodyage"),
-                            "fat_free_weight_kg": m.get("fatFreeWeight"),
-                            "sinew_mass_kg": m.get("sinew"),
-                        },
-                    )
-                    added += 1
-        except Exception as exc:
-            logger.warning(f"Renpho cloud client fallback engaged: {exc}")
-
-    total_count = db.query(models.ScaleMeasurement).count()
-    processed = added if added > 0 else total_count
-    msg = (
-        f"Renpho ES-26BB-B senkronizasyonu tamamlandı ({processed} ölçüm doğrulandı)."
-        if email
-        else f"Renpho ES-26BB-B yerel ve BLE telemetri deposu doğrulandı ({processed} kayıt aktif)."
-    )
+    msg = f"Renpho ES-26BB-B bulut senkronizasyonu tamamlandı ({added} ölçüm çekildi)."
     db.add(
         models.SyncLog(
             provider="renpho",
             status="nominal",
-            records_processed=processed,
+            records_processed=added,
             message=msg,
         )
     )
@@ -181,15 +208,15 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
         models.WebhookHeartbeat(
             source="renpho_es26bb",
             device_label="Renpho Body Fat Scale ES-26BB-B",
-            event_type="heartbeat",
+            event_type="cloud_sync",
             status="healthy",
-            records_received=processed,
+            records_received=added,
             latency_ms=1.3,
             payload_summary=msg,
         )
     )
     db.commit()
-    return {"status": "nominal", "provider": "renpho", "records_processed": processed, "message": msg}
+    return {"status": "nominal", "provider": "renpho", "records_processed": added, "message": msg}
 
 
 def list_scale_records(db: Session, limit: int = 60) -> Dict[str, Any]:

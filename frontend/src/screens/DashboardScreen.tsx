@@ -79,29 +79,33 @@ export function DashboardScreen({
 
   const handleBleQuickRead = async () => {
     try {
-      const measuredWeight = 82.4;
       const navAny = navigator as any;
-      if (navAny && navAny.bluetooth) {
-        try {
-          const device = await navAny.bluetooth.requestDevice({
-            filters: [{ namePrefix: 'RENPHO' }, { namePrefix: 'ES-' }],
-            optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb', '0000181d-0000-1000-8000-00805f9b34fb'],
-          });
-          if (device?.gatt) {
-            await device.gatt.connect();
-          }
-        } catch {
-          // Fallback to verified BLE packet submission when browser Bluetooth dialog is cancelled
-        }
+      if (!navAny || !navAny.bluetooth) {
+        onNavigateTab('scale');
+        return;
       }
-      const res = await apiClient.ingestBleScale({
-        weight_kg: measuredWeight,
-        impedance_ohm: 478,
+      const device = await navAny.bluetooth.requestDevice({
+        filters: [{ namePrefix: 'RENPHO' }, { namePrefix: 'ES-' }, { namePrefix: 'QN-' }],
+        optionalServices: ['0000ffe0-0000-1000-8000-00805f9b34fb', '0000181d-0000-1000-8000-00805f9b34fb'],
       });
-      setToastMsg(res.message);
-      await loadData();
-    } catch (err: any) {
-      setToastMsg(err?.message || 'Web Bluetooth tartı okuması başarısız oldu.');
+      if (!device?.gatt) {
+        setToastMsg('Bluetooth GATT sunucusuna bağlanılamadı.');
+        return;
+      }
+      const server = await device.gatt.connect();
+      const service = await server.getPrimaryService('0000181d-0000-1000-8000-00805f9b34fb');
+      const char = await service.getCharacteristic('00002a9d-0000-1000-8000-00805f9b34fb');
+      const val = await char.readValue();
+      const rawWeight = val.getUint16(1, true) * 0.005;
+      if (rawWeight > 20 && rawWeight < 300) {
+        const res = await apiClient.ingestBleScale({
+          weight_kg: Number(rawWeight.toFixed(2)),
+        });
+        setToastMsg(res.message);
+        await loadData();
+      }
+    } catch {
+      setToastMsg('Aktif Bluetooth tartı okuması tamamlanmadı. Tartı sekmesinden ölçüm ekleyebilir veya buluttan çekebilirsiniz.');
     }
   };
 
