@@ -141,11 +141,16 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
             d_str = (today - timedelta(days=offset)).isoformat()
             stats = api.get_stats(d_str) or {}
             hr = api.get_heart_rates(d_str) or {}
-            sleep = (api.get_sleep_data(d_str) or {}).get("dailySleepDTO", {})
+            sleep_full = api.get_sleep_data(d_str) or {}
+            sleep = sleep_full.get("dailySleepDTO") or {}
             sleep_sec = float(sleep.get("sleepTimeSeconds") or 0)
             total_steps = int(stats.get("totalSteps") or 0)
-            rhr = hr.get("restingHeartRate")
-            if total_steps <= 0 and sleep_sec <= 0 and rhr is None:
+            rhr = hr.get("restingHeartRate") or stats.get("restingHeartRate")
+            overnight_hrv = sleep_full.get("avgOvernightHrv") or sleep.get("avgOvernightHrv")
+            exercise_mins = int(stats.get("moderateIntensityMinutes") or 0) + int(
+                stats.get("vigorousIntensityMinutes") or 0
+            )
+            if total_steps <= 0 and sleep_sec <= 0 and rhr is None and overnight_hrv is None:
                 continue
             batch.append(
                 {
@@ -154,8 +159,9 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
                     "active_calories_kcal": float(stats.get("activeKilocalories") or 0.0),
                     "total_calories_kcal": float(stats.get("totalKilocalories") or 0.0),
                     "resting_hr_bpm": rhr,
-                    "min_hr_bpm": hr.get("minHeartRate"),
-                    "max_hr_bpm": hr.get("maxHeartRate"),
+                    "min_hr_bpm": hr.get("minHeartRate") or stats.get("minHeartRate"),
+                    "max_hr_bpm": hr.get("maxHeartRate") or stats.get("maxHeartRate"),
+                    "hrv_ms": round(float(overnight_hrv), 1) if overnight_hrv is not None else None,
                     "sleep_hours": round(sleep_sec / 3600.0, 2) if sleep_sec > 0 else None,
                     "deep_sleep_hours": round(float(sleep.get("deepSleepSeconds") or 0) / 3600.0, 2),
                     "light_sleep_hours": round(float(sleep.get("lightSleepSeconds") or 0) / 3600.0, 2),
@@ -165,6 +171,7 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
                     "body_battery_max": stats.get("bodyBatteryHighestValue"),
                     "body_battery_min": stats.get("bodyBatteryLowestValue"),
                     "spo2_pct": stats.get("averageSpo2"),
+                    "exercise_minutes": exercise_mins,
                 }
             )
         if batch:

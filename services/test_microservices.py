@@ -367,6 +367,8 @@ def test_analytics_insights_and_ai_advisor_endpoints():
     assert ins["recovery_score"] > 0
     assert len(ins["correlations"]) == 4
     assert len(ins["anomalies"]) >= 1
+    assert "clinical_evaluation" in ins
+    assert len(ins["clinical_evaluation"]["pillars"]) == 5
 
     prompts_res = client.get("/api/ai/prompts")
     assert prompts_res.status_code == 200

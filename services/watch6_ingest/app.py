@@ -522,9 +522,47 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
                 except sqlite3.OperationalError:
                     continue
 
+        scale_weights: Dict[int, float] = {}
+        scale_fats: Dict[int, float] = {}
+        try:
+            for ld, w_val in cur.execute(
+                "SELECT local_date, AVG(weight) FROM weight_record_table WHERE local_date IS NOT NULL AND weight IS NOT NULL GROUP BY local_date"
+            ).fetchall():
+                w_kg = float(w_val) / 1000.0 if float(w_val) > 500.0 else float(w_val)
+                if 25.0 <= w_kg <= 295.0:
+                    scale_weights[int(ld)] = round(w_kg, 2)
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            for ld, bf_val in cur.execute(
+                "SELECT local_date, AVG(percentage) FROM body_fat_record_table WHERE local_date IS NOT NULL AND percentage IS NOT NULL GROUP BY local_date"
+            ).fetchall():
+                if 4.0 <= float(bf_val) <= 65.0:
+                    scale_fats[int(ld)] = round(float(bf_val), 2)
+        except sqlite3.OperationalError:
+            pass
+
         conn.close()
 
         epoch = datetime(1970, 1, 1)
+        if scale_weights:
+            existing_scale_dates = {r[0] for r in db.query(models.ScaleMeasurement.date).all()}
+            for ld, w_kg in sorted(scale_weights.items())[-180:]:
+                d_str = (epoch + timedelta(days=int(ld))).strftime("%Y-%m-%d")
+                if d_str not in existing_scale_dates:
+                    upsert_scale_measurement(
+                        db,
+                        {
+                            "timestamp": f"{d_str}T07:45:00Z",
+                            "source": "renpho_es26bb",
+                            "weight_kg": w_kg,
+                            "body_fat_pct": scale_fats.get(ld),
+                        },
+                        emit_log=False,
+                    )
+                    existing_scale_dates.add(d_str)
+
         records: List[Dict[str, Any]] = []
         for local_date, metrics in sorted(data_map.items())[-180:]:
             d_str = (epoch + timedelta(days=int(local_date))).strftime("%Y-%m-%d")
