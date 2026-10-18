@@ -351,44 +351,44 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
     metrics = [
         {
             "key": "weight",
-            "label": "Güncel Kilo (Renpho)",
+            "label": "Güncel Kilonuz",
             "value": f"{latest.weight_kg:.2f} kg" if latest.weight_kg is not None else "-",
-            "delta": _fmt_delta(latest.weight_kg, first.weight_kg, "kg"),
+            "delta": f"Dönem değişimi: {_fmt_delta(latest.weight_kg, first.weight_kg, 'kg')}",
             "target_tab": "scale",
         },
         {
             "key": "body_fat",
-            "label": "Yağ Oranı (ES-26BB-B)",
+            "label": "Vücut Yağ Oranı",
             "value": f"%{latest.body_fat_pct:.1f}" if latest.body_fat_pct is not None else "-",
-            "delta": _fmt_delta(latest.body_fat_pct, first.body_fat_pct, "puan"),
+            "delta": f"Dönem değişimi: {_fmt_delta(latest.body_fat_pct, first.body_fat_pct, 'puan')}",
             "target_tab": "scale",
         },
         {
             "key": "muscle",
-            "label": "Kas Kütlesi (ES-26BB-B)",
+            "label": "Kas Kütlesi",
             "value": f"{latest.muscle_mass_kg:.2f} kg" if latest.muscle_mass_kg is not None else "-",
-            "delta": _fmt_delta(latest.muscle_mass_kg, first.muscle_mass_kg, "kg"),
+            "delta": f"Dönem değişimi: {_fmt_delta(latest.muscle_mass_kg, first.muscle_mass_kg, 'kg')}",
             "target_tab": "scale",
         },
         {
             "key": "recovery",
-            "label": "Toparlanma Skoru",
+            "label": "Vücut Dinlenme Puanı",
             "value": f"{latest.recovery_score:.0f} / 100",
-            "delta": _fmt_delta(latest.recovery_score, first.recovery_score, "puan"),
+            "delta": "75+ Çok İyi | 55-74 Orta",
             "target_tab": "insights",
         },
         {
             "key": "steps",
-            "label": "Günlük Adım (Watch6/Garmin)",
+            "label": "Bugünkü Adım Sayısı",
             "value": f"{latest.steps:,}".replace(",", "."),
-            "delta": f"{latest.steps - first.steps:+d} adım",
+            "delta": "Günlük Hedef: 7.500 adım",
             "target_tab": "wearables",
         },
         {
             "key": "sleep",
-            "label": "Uyku Süresi (Garmin/Watch6)",
-            "value": f"{latest.sleep_hours:.1f} sa" if latest.sleep_hours is not None else "-",
-            "delta": _fmt_delta(latest.sleep_hours, first.sleep_hours, "sa"),
+            "label": "Son Uyku Süresi",
+            "value": f"{latest.sleep_hours:.1f} saat" if latest.sleep_hours is not None else "-",
+            "delta": "İdeal Aralık: 7.5 - 8.5 saat",
             "target_tab": "wearables",
         },
     ]
@@ -438,7 +438,19 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
 
     daily_rows = []
     for s in reversed(summaries):
-        attr = json.loads(s.source_attribution_json or "{}")
+        notes = []
+        if (s.sleep_hours or 0) >= 7.0:
+            notes.append("İyi Uyku")
+        elif (s.sleep_hours or 0) > 0:
+            notes.append("Az Uyku")
+        if (s.steps or 0) >= 7000:
+            notes.append("Aktif Gün")
+        elif (s.steps or 0) < 3000:
+            notes.append("Düşük Hareket")
+        else:
+            notes.append("Orta Hareket")
+        if (s.water_pct or 50) < 50.0:
+            notes.append("Su Eksik")
         daily_rows.append(
             {
                 "id": s.id,
@@ -454,7 +466,7 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
                 "stress_score": s.stress_score,
                 "body_battery_max": s.body_battery_max,
                 "recovery_score": s.recovery_score,
-                "primary_source": f"Tartı:{attr.get('weight', '-')}|Uyku:{attr.get('sleep', '-')}|Adım:{attr.get('steps', '-')}",
+                "primary_source": " • ".join(notes) if notes else "Normal Seyir",
             }
         )
 
@@ -465,6 +477,7 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
         "window_status": window_status,
         "cycle_start_date": cycle_start,
         "metrics": metrics,
+        "composition_quality": insights.get("composition_quality", {}),
         "weight_series": weight_series,
         "recovery_series": recovery_series,
         "daily_rows": daily_rows,
