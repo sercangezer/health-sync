@@ -568,7 +568,19 @@ def import_health_file_payload(payload: Dict[str, Any], db: Session) -> Dict[str
     }
 
 
+def _extract_gdrive_folder_id(url_or_path: str) -> str | None:
+    if url_or_path.startswith("gdrive-folder:"):
+        return url_or_path.split("gdrive-folder:", 1)[1].strip()
+    if "drive.google.com" in url_or_path:
+        m = re.search(r"/folders/([a-zA-Z0-9_-]+)", url_or_path)
+        if m:
+            return m.group(1)
+    return None
+
+
 def _extract_gdrive_file_id(url_or_path: str) -> str | None:
+    if _extract_gdrive_folder_id(url_or_path):
+        return None
     if url_or_path.startswith("gdrive:"):
         return url_or_path.split("gdrive:", 1)[1].strip()
     if "drive.google.com" in url_or_path:
@@ -581,18 +593,72 @@ def _extract_gdrive_file_id(url_or_path: str) -> str | None:
     return None
 
 
+def _download_gdrive_file_bytes(file_id: str) -> bytes:
+    download_url = f"https://drive.google.com/uc?export=download&id={file_id}&confirm=t"
+    req = urllib.request.Request(download_url, headers={"User-Agent": "HealthSync/1.0"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read()
+
+
+def _list_gdrive_folder_file_ids(folder_id: str) -> List[str]:
+    found: List[str] = []
+    for url in (
+        f"https://drive.google.com/embeddedfolderview?id={folder_id}#list",
+        f"https://drive.google.com/drive/folders/{folder_id}",
+    ):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 HealthSync/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+            for pattern in (
+                r'id="entry-([a-zA-Z0-9_-]{15,})"',
+                r"/file/d/([a-zA-Z0-9_-]{15,})",
+                r'data-id="([a-zA-Z0-9_-]{15,})"',
+            ):
+                for fid in re.findall(pattern, html):
+                    if fid != folder_id and fid not in found:
+                        found.append(fid)
+            if found:
+                break
+        except Exception as exc:
+            logger.warning(f"Google Drive folder listing check failed for {url}: {exc}")
+    return found
+
+
 def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
     cfg = get_or_create_integration_settings(db)
     export_dir = (cfg.watch_export_dir or os.getenv("WATCH_EXPORT_DIR", "/data/watch_exports")).strip()
     imported = 0
 
+    gdrive_folder_id = _extract_gdrive_folder_id(export_dir)
     gdrive_id = _extract_gdrive_file_id(export_dir)
-    if gdrive_id:
-        download_url = f"https://drive.google.com/uc?export=download&id={gdrive_id}"
+
+    if gdrive_folder_id:
         try:
-            req = urllib.request.Request(download_url, headers={"User-Agent": "HealthSync/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = resp.read()
+            file_ids = _list_gdrive_folder_file_ids(gdrive_folder_id)
+            for fid in file_ids[:10]:
+                try:
+                    data = _download_gdrive_file_bytes(fid)
+                    if data.startswith(b"PK\x03\x04") or data.startswith(b"SQLite format 3\x00"):
+                        imported += parse_health_connect_sqlite_bytes(data, db)
+                except Exception as inner_exc:
+                    logger.warning(f"Skipped Google Drive folder item {fid}: {inner_exc}")
+        except Exception as exc:
+            err_msg = f"Google Drive klasörü okunamadı ({gdrive_folder_id}): {exc}"
+            logger.warning(err_msg)
+            db.add(
+                models.SyncLog(
+                    provider="watch6",
+                    status="degraded",
+                    records_processed=0,
+                    message=err_msg,
+                )
+            )
+            db.commit()
+            return {"status": "degraded", "provider": "watch6", "records_processed": 0, "message": err_msg}
+    elif gdrive_id:
+        try:
+            data = _download_gdrive_file_bytes(gdrive_id)
             imported += parse_health_connect_sqlite_bytes(data, db)
         except Exception as exc:
             err_msg = f"Google Drive Health Connect yedeği indirilemedi ({gdrive_id}): {exc}"
