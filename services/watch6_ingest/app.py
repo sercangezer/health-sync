@@ -3,8 +3,11 @@ import csv
 import hmac
 import io
 import os
+import re
 import sqlite3
 import tempfile
+import urllib.request
+import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -354,11 +357,34 @@ def record_webhook_heartbeat(db: Session, payload: Dict[str, Any]) -> Dict[str, 
     return get_webhook_heartbeat_monitor(db)
 
 
+def _extract_sqlite_from_zip_or_raw(raw_bytes: bytes) -> bytes:
+    if raw_bytes.startswith(b"PK\x03\x04"):
+        try:
+            with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+                for name in zf.namelist():
+                    if name.endswith("/"):
+                        continue
+                    candidate = zf.read(name)
+                    if candidate.startswith(b"SQLite format 3\x00"):
+                        return candidate
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Health Connect .zip arşivi açılamadı: {exc}",
+            ) from exc
+        raise HTTPException(
+            status_code=400,
+            detail="ZIP arşivi içinde geçerli bir Health Connect SQLite (.db) dosyası bulunamadı.",
+        )
+    return raw_bytes
+
+
 def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
+    raw_bytes = _extract_sqlite_from_zip_or_raw(raw_bytes)
     if not raw_bytes.startswith(b"SQLite format 3\x00"):
         raise HTTPException(
             status_code=400,
-            detail="Geçersiz SQLite veritabanı başlığı. Yalnızca geçerli Health Connect .db dosyaları kabul edilir.",
+            detail="Geçersiz SQLite veritabanı başlığı. Yalnızca geçerli Health Connect .db veya .zip dosyaları kabul edilir.",
         )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".db") as tmp:
@@ -371,24 +397,84 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
         data_map: Dict[int, Dict[str, Any]] = {}
 
         queries = [
-            ("steps", "SELECT local_date, SUM(count) FROM steps_record_table GROUP BY local_date"),
-            ("active_calories_kcal", "SELECT local_date, SUM(energy) FROM active_calories_burned_record_table GROUP BY local_date"),
-            ("total_calories_kcal", "SELECT local_date, SUM(energy) / 1000.0 FROM total_calories_burned_record_table GROUP BY local_date"),
-            ("resting_hr_bpm", "SELECT local_date, AVG(beats_per_minute) FROM resting_heart_rate_record_table GROUP BY local_date"),
-            ("hrv_ms", "SELECT local_date, AVG(heart_rate_variability_millis) FROM heart_rate_variability_rmssd_record_table GROUP BY local_date"),
-            ("sleep_hours", "SELECT local_date, SUM(end_time - start_time) / 3600000.0 FROM sleep_session_record_table GROUP BY local_date"),
-            ("spo2_pct", "SELECT local_date, AVG(percentage) FROM oxygen_saturation_record_table GROUP BY local_date"),
-            ("vo2_max", "SELECT local_date, AVG(vo2_milliliters_per_minute_kilogram) FROM vo2_max_record_table GROUP BY local_date"),
-            ("water_liters", "SELECT local_date, SUM(volume) FROM hydration_record_table GROUP BY local_date"),
+            (
+                "steps",
+                [
+                    "SELECT local_date, SUM(count) FROM steps_record_table GROUP BY local_date",
+                    "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(count) FROM steps_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "active_calories_kcal",
+                [
+                    "SELECT local_date, SUM(energy) FROM active_calories_burned_record_table GROUP BY local_date",
+                    "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(energy) FROM active_calories_burned_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "total_calories_kcal",
+                [
+                    "SELECT local_date, SUM(energy) / 1000.0 FROM total_calories_burned_record_table GROUP BY local_date",
+                    "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(energy) / 1000.0 FROM total_calories_burned_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "resting_hr_bpm",
+                [
+                    "SELECT local_date, AVG(beats_per_minute) FROM resting_heart_rate_record_table GROUP BY local_date",
+                    "SELECT CAST(time / 86400000 AS INTEGER), AVG(beats_per_minute) FROM resting_heart_rate_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "hrv_ms",
+                [
+                    "SELECT local_date, AVG(heart_rate_variability_millis) FROM heart_rate_variability_rmssd_record_table GROUP BY local_date",
+                    "SELECT CAST(time / 86400000 AS INTEGER), AVG(heart_rate_variability_millis) FROM heart_rate_variability_rmssd_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "sleep_hours",
+                [
+                    "SELECT local_date, SUM(end_time - start_time) / 3600000.0 FROM sleep_session_record_table GROUP BY local_date",
+                    "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(end_time - start_time) / 3600000.0 FROM sleep_session_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "spo2_pct",
+                [
+                    "SELECT local_date, AVG(percentage) FROM oxygen_saturation_record_table GROUP BY local_date",
+                    "SELECT CAST(time / 86400000 AS INTEGER), AVG(percentage) FROM oxygen_saturation_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "vo2_max",
+                [
+                    "SELECT local_date, AVG(vo2_milliliters_per_minute_kilogram) FROM vo2_max_record_table GROUP BY local_date",
+                    "SELECT CAST(time / 86400000 AS INTEGER), AVG(vo2_milliliters_per_minute_kilogram) FROM vo2_max_record_table GROUP BY 1",
+                ],
+            ),
+            (
+                "water_liters",
+                [
+                    "SELECT local_date, SUM(volume) FROM hydration_record_table GROUP BY local_date",
+                    "SELECT CAST(start_time / 86400000 AS INTEGER), SUM(volume) FROM hydration_record_table GROUP BY 1",
+                ],
+            ),
         ]
-        for key, sql in queries:
-            try:
-                cur.execute(sql)
-                for local_date, val in cur.fetchall():
-                    if local_date is not None and val is not None:
-                        data_map.setdefault(int(local_date), {})[key] = val
-            except sqlite3.OperationalError:
-                continue
+        for key, sql_candidates in queries:
+            for sql in sql_candidates:
+                try:
+                    cur.execute(sql)
+                    rows = cur.fetchall()
+                    matched_any = False
+                    for local_date, val in rows:
+                        if local_date is not None and val is not None:
+                            data_map.setdefault(int(local_date), {})[key] = val
+                            matched_any = True
+                    if matched_any:
+                        break
+                except sqlite3.OperationalError:
+                    continue
 
         conn.close()
 
@@ -465,12 +551,15 @@ def import_health_file_payload(payload: Dict[str, Any], db: Session) -> Dict[str
     except Exception as exc:
         raise HTTPException(status_code=400, detail="Geçersiz Base64 dosya kodlaması.") from exc
 
-    if fmt in ("db", "sqlite", "sqlite3"):
+    if fmt in ("db", "sqlite", "sqlite3", "zip") or raw_bytes.startswith(b"PK\x03\x04"):
         count = parse_health_connect_sqlite_bytes(raw_bytes, db)
     elif fmt == "csv":
         count = parse_csv_bytes(raw_bytes, source, db)
     else:
-        raise HTTPException(status_code=400, detail=f"Desteklenmeyen dosya formatı: '{fmt}'. Sadece 'db' veya 'csv' desteklenir.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Desteklenmeyen dosya formatı: '{fmt}'. Sadece 'db', 'zip' veya 'csv' desteklenir.",
+        )
 
     return {
         "status": "nominal",
@@ -479,11 +568,46 @@ def import_health_file_payload(payload: Dict[str, Any], db: Session) -> Dict[str
     }
 
 
+def _extract_gdrive_file_id(url_or_path: str) -> str | None:
+    if url_or_path.startswith("gdrive:"):
+        return url_or_path.split("gdrive:", 1)[1].strip()
+    if "drive.google.com" in url_or_path:
+        m = re.search(r"/file/d/([a-zA-Z0-9_-]+)", url_or_path)
+        if m:
+            return m.group(1)
+        m_id = re.search(r"[?&]id=([a-zA-Z0-9_-]+)", url_or_path)
+        if m_id:
+            return m_id.group(1)
+    return None
+
+
 def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
     cfg = get_or_create_integration_settings(db)
-    export_dir = cfg.watch_export_dir or os.getenv("WATCH_EXPORT_DIR", "/data/watch_exports")
+    export_dir = (cfg.watch_export_dir or os.getenv("WATCH_EXPORT_DIR", "/data/watch_exports")).strip()
     imported = 0
-    if os.path.isdir(export_dir):
+
+    gdrive_id = _extract_gdrive_file_id(export_dir)
+    if gdrive_id:
+        download_url = f"https://drive.google.com/uc?export=download&id={gdrive_id}"
+        try:
+            req = urllib.request.Request(download_url, headers={"User-Agent": "HealthSync/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = resp.read()
+            imported += parse_health_connect_sqlite_bytes(data, db)
+        except Exception as exc:
+            err_msg = f"Google Drive Health Connect yedeği indirilemedi ({gdrive_id}): {exc}"
+            logger.warning(err_msg)
+            db.add(
+                models.SyncLog(
+                    provider="watch6",
+                    status="degraded",
+                    records_processed=0,
+                    message=err_msg,
+                )
+            )
+            db.commit()
+            return {"status": "degraded", "provider": "watch6", "records_processed": 0, "message": err_msg}
+    elif os.path.isdir(export_dir):
         for fname in sorted(os.listdir(export_dir)):
             fpath = os.path.join(export_dir, fname)
             if not os.path.isfile(fpath):
@@ -491,7 +615,7 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
             try:
                 with open(fpath, "rb") as f:
                     data = f.read()
-                if fname.endswith(".db"):
+                if fname.endswith((".db", ".sqlite", ".zip")):
                     imported += parse_health_connect_sqlite_bytes(data, db)
                 elif fname.endswith(".csv"):
                     imported += parse_csv_bytes(data, "galaxy_watch6", db)
@@ -519,7 +643,7 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
         db.commit()
         return {"status": "waiting", "provider": "watch6", "records_processed": 0, "message": msg}
 
-    msg = f"Samsung Galaxy Watch6 (Health Connect) klasör senkronizasyonu tamamlandı ({imported} günlük kayıt işlendi)."
+    msg = f"Samsung Galaxy Watch6 (Health Connect) klasör/Drive senkronizasyonu tamamlandı ({imported} günlük kayıt işlendi)."
     db.add(
         models.SyncLog(
             provider="watch6",

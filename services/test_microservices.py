@@ -183,7 +183,8 @@ def test_health_connect_sqlite_db_and_csv_import():
         conn.close()
 
         with open(tmp_path, "rb") as f:
-            b64_db = base64.b64encode(f.read()).decode("ascii")
+            raw_db_bytes = f.read()
+        b64_db = base64.b64encode(raw_db_bytes).decode("ascii")
 
         res = client.post(
             "/api/ingest/import-file",
@@ -196,6 +197,27 @@ def test_health_connect_sqlite_db_and_csv_import():
         )
         assert res.status_code == 200
         assert res.json()["ingested_count"] == 1
+
+        # Also test Google Drive Health Connect .zip export archive containing health_connect_export.db
+        import io
+        import zipfile
+
+        zip_buf = io.BytesIO()
+        with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("health_connect_export.db", raw_db_bytes)
+        b64_zip = base64.b64encode(zip_buf.getvalue()).decode("ascii")
+
+        res_zip = client.post(
+            "/api/ingest/import-file",
+            json={
+                "file_name": "Health Connect.zip",
+                "format": "zip",
+                "device_source": "galaxy_watch6",
+                "content_base64": b64_zip,
+            },
+        )
+        assert res_zip.status_code == 200
+        assert res_zip.json()["ingested_count"] == 1
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
