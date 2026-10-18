@@ -159,17 +159,61 @@ def detect_anomalies(
                 "id": "window-pending",
                 "date": "-",
                 "severity": "warning",
-                "metric": "Takip Döngüsü Penceresi",
-                "source": "reconciliation-service",
-                "title": "Yeni Döngü Ölçümü Bekleniyor",
-                "detail": "Seçili döngü başlangıç tarihinden sonra henüz veri kaydedilmedi (Bölüm 6 Sınır Koruması aktif).",
+                "metric": "Henüz Ölçüm Yok",
+                "source": "Tüm Cihazlar",
+                "title": "Yeni Takip Dönemi İçin İlk Ölçüm Bekleniyor",
+                "detail": "Tartı, akıllı saat veya bilekliğinizden ilk ölçüm geldiğinde sağlık uyarıları ve değerlendirmeler burada görünecektir.",
             }
         ]
 
     anomalies: List[Dict[str, Any]] = []
     latest = summaries[-1]
 
-    # Baseline averages over prior window
+    # 1. Muscle mass loss danger
+    if composition.get("muscle_loss_share_pct", 0.0) > 22.0:
+        w_delta = composition.get("total_weight_delta_kg", 0.0)
+        m_delta = composition.get("muscle_mass_delta_kg", 0.0)
+        m_share = composition.get("muscle_loss_share_pct", 0.0)
+        anomalies.append(
+            {
+                "id": f"muscle-loss-{latest.date}",
+                "date": latest.date,
+                "severity": "critical",
+                "metric": f"Kas Kaybı: {m_delta} kg (Kilo kaybının %{m_share}'i)",
+                "source": "Akıllı Tartı (Renpho)",
+                "title": "Tehlike: Kilo Verirken Kas Kaybı Yaşanıyor",
+                "detail": (
+                    f"Toplam kilo değişiminizin ({w_delta} kg) %{m_share} kadarı ({m_delta} kg) kas dokusundan gitti. "
+                    "Kas erimesini durdurmak için her öğünde protein tüketin ve yürüyüşe ek olarak direnç/ağırlık egzersizi yapın."
+                ),
+            }
+        )
+
+    # 2. Blood oxygen (SpO2) warning / danger from latest wearable records
+    latest_spo2_row = (
+        db.query(models.DeviceDailyMetric)
+        .filter(models.DeviceDailyMetric.spo2_pct.isnot(None))
+        .order_by(models.DeviceDailyMetric.date.desc())
+        .first()
+    )
+    if latest_spo2_row and latest_spo2_row.spo2_pct is not None and latest_spo2_row.spo2_pct < 94.0:
+        spo2_val = round(float(latest_spo2_row.spo2_pct), 1)
+        anomalies.append(
+            {
+                "id": f"low-spo2-{latest_spo2_row.date}",
+                "date": latest_spo2_row.date,
+                "severity": "critical" if spo2_val < 92.5 else "warning",
+                "metric": f"Kan Oksijeni %{spo2_val} (İdeal: ≥%95)",
+                "source": "Akıllı Saat & Bileklik",
+                "title": "Uyarı: Uyku Sırasında Kan Oksijen Seviyesi Düşük",
+                "detail": (
+                    f"Kan oksijen doygunluğunuz (SpO2) %{spo2_val} ölçüldü (normal aralık %95-100). "
+                    "Gece horlaması, burun tıkanıklığı veya uyku apnesi kaynaklı olabilir; yan yatmayı deneyin ve devam ederse hekime danışın."
+                ),
+            }
+        )
+
+    # 3. Resting Heart Rate (RHR) spike
     rhr_vals = [s.resting_hr_bpm for s in summaries[:-1] if s.resting_hr_bpm is not None]
     hrv_vals = [s.hrv_ms for s in summaries[:-1] if s.hrv_ms is not None]
 
@@ -181,13 +225,14 @@ def detect_anomalies(
                     "id": f"rhr-spike-{latest.date}",
                     "date": latest.date,
                     "severity": "critical",
-                    "metric": f"RHR {latest.resting_hr_bpm} bpm (+{round(latest.resting_hr_bpm - base_rhr, 1)})",
-                    "source": "galaxy_watch6 / garmin_band",
-                    "title": "Dinlenik Nabız Bazal Üzerinde",
-                    "detail": "Dinlenik nabız 14 günlük bazal ortalamanın belirgin üzerinde. Yetersiz toparlanma veya stres yükü olasıdır.",
+                    "metric": f"Dinlenik Nabız {int(latest.resting_hr_bpm)} atım/dk (+{round(latest.resting_hr_bpm - base_rhr, 1)})",
+                    "source": "Saat & Bileklik",
+                    "title": "Tehlike: Dinlenik Kalp Atış Hızınız Normalin Üzerinde",
+                    "detail": "Dinlenik nabzınız son günlerin ortalamasından belirgin şekilde yükseldi. Vücudunuz yorgun, stresli veya bir enfeksiyonla savaşıyor olabilir; bugün dinlenmeye öncelik verin.",
                 }
             )
 
+    # 4. HRV drop
     if hrv_vals and latest.hrv_ms is not None:
         base_hrv = sum(hrv_vals) / len(hrv_vals)
         if base_hrv > 0 and ((base_hrv - latest.hrv_ms) / base_hrv) >= 0.12:
@@ -196,51 +241,89 @@ def detect_anomalies(
                     "id": f"hrv-drop-{latest.date}",
                     "date": latest.date,
                     "severity": "warning",
-                    "metric": f"HRV {latest.hrv_ms} ms (Bazal: {round(base_hrv, 1)} ms)",
-                    "source": "galaxy_watch6 / garmin_band",
-                    "title": "HRV Otonom Toparlanma Düşüşü",
-                    "detail": "Kalp atış hızı değişkenliği (HRV) bazalin %12'den fazla altında. Ağır antrenman yerine aktif dinlenme önerilir.",
+                    "metric": f"Kalp Değişkenliği {int(latest.hrv_ms)} ms (Normali: {int(base_hrv)} ms)",
+                    "source": "Saat & Bileklik",
+                    "title": "Uyarı: Vücut Yorgunluğu ve Stres Yükü Artışı",
+                    "detail": "Sinir sistemi toparlanma göstergeniz (HRV) ortalamanızın altına düştü. Ağır egzersiz yerine hafif yürüyüş ve erken uyku önerilir.",
                 }
             )
 
-    if composition.get("muscle_loss_share_pct", 0.0) > 22.0:
+    # 5. Low daily step count / inactivity warning
+    if latest.steps is not None and latest.steps < 3000:
         anomalies.append(
             {
-                "id": f"muscle-loss-{latest.date}",
+                "id": f"low-steps-{latest.date}",
                 "date": latest.date,
-                "severity": "critical",
-                "metric": f"Kas Payı %{composition['muscle_loss_share_pct']}",
-                "source": "renpho_es26bb",
-                "title": "Kas Kütlesi Kaybı Riski",
-                "detail": composition.get("interpretation", ""),
+                "severity": "warning",
+                "metric": f"Günlük {latest.steps:,} adım (Hedef: 7.500+)".replace(",", "."),
+                "source": "Akıllı Saat (Watch6)",
+                "title": "Uyarı: Günlük Hareket ve Yürüyüş Miktarı Çok Düşük",
+                "detail": (
+                    f"Son günde yalnızca {latest.steps:,} adım atıldı. Hareketsizlik metabolizmayı yavaşlatır ve yağ yakımını durdurur; "
+                    "bugün en az 30-40 dakika tempolu yürüyüş yapmaya çalışın."
+                ).replace(",", "."),
             }
         )
 
+    # 6. Dehydration / Low Body Water % warning
+    if latest.water_pct is not None and latest.water_pct < 50.0:
+        anomalies.append(
+            {
+                "id": f"low-water-{latest.date}",
+                "date": latest.date,
+                "severity": "warning",
+                "metric": f"Vücut Suyu %{round(latest.water_pct, 1)} (İdeal: %50-65)",
+                "source": "Akıllı Tartı (Renpho)",
+                "title": "Uyarı: Vücut Su Oranı Düşük (Susuzluk ve Ödem Riski)",
+                "detail": (
+                    f"Vücut su oranınız %{round(latest.water_pct, 1)} ile ideal sınırın (%50) altında. "
+                    "Yetersiz su içmek tartıda ödem kaynaklı dalgalanma yapar ve kas toparlanmasını yavaşlatır; günde en az 2.5 - 3 litre su için."
+                ),
+            }
+        )
+
+    # 7. Cumulative sleep debt
     recent_sleep = [s.sleep_hours for s in summaries[-3:] if s.sleep_hours is not None]
     if recent_sleep and (sum(recent_sleep) / len(recent_sleep)) < 6.6:
-        avg_slp = round(sum(recent_sleep) / len(recent_sleep), 2)
+        avg_slp = round(sum(recent_sleep) / len(recent_sleep), 1)
         anomalies.append(
             {
                 "id": f"sleep-debt-{latest.date}",
                 "date": latest.date,
                 "severity": "warning",
-                "metric": f"3g Ort. Uyku: {avg_slp} sa",
-                "source": "garmin_band",
-                "title": "Birikimli Uyku Borcu",
-                "detail": "Son 3 günlük ortalama uyku süresi 6.6 saatin altında; kortizol kaynaklı su tutumu (ödem) görülebilir.",
+                "metric": f"Son 3 Gün Ort. {avg_slp} saat (İdeal: 7.5+ saat)",
+                "source": "Akıllı Bileklik & Saat",
+                "title": "Uyarı: Yetersiz Uyku Süresi (Uyku Borcu)",
+                "detail": f"Son 3 günde ortalama {avg_slp} saat uyudunuz. Az uyku stres hormonunu artırarak vücudun su tutmasına ve iştah artışına yol açar.",
             }
         )
 
-    if not anomalies:
+    # 8. Always provide a clear positive summary when heart & energy are strong
+    if latest.resting_hr_bpm is not None and latest.resting_hr_bpm <= 62:
+        anomalies.append(
+            {
+                "id": f"heart-nominal-{latest.date}",
+                "date": latest.date,
+                "severity": "nominal",
+                "metric": f"Dinlenik Nabız {int(latest.resting_hr_bpm)} atım/dk | Toparlanma {int(latest.recovery_score)}/100",
+                "source": "Saat & Bileklik",
+                "title": "Olumlu: Kalp Kondisyonunuz ve Dinlenme Kapasiteniz Güçlü",
+                "detail": (
+                    f"Dinlenik kalp atış hızınız ({int(latest.resting_hr_bpm)} atım/dk) ve vücut toparlanma puanınız ({int(latest.recovery_score)}/100) "
+                    "kalp-damar sağlığınızın ve fiziksel dinlenme kapasitenizin çok iyi durumda olduğunu gösteriyor."
+                ),
+            }
+        )
+    elif not anomalies:
         anomalies.append(
             {
                 "id": f"nominal-state-{latest.date}",
                 "date": latest.date,
                 "severity": "nominal",
-                "metric": f"Toparlanma {latest.recovery_score}/100",
-                "source": "all_devices",
-                "title": "Tüm Biyometrik Göstergeler Nominal Aralıkta",
-                "detail": "Renpho ES-26BB-B, Galaxy Watch6 ve Garmin Smart Band metriklerinde kritik sapma tespit edilmedi.",
+                "metric": f"Toparlanma {int(latest.recovery_score)}/100",
+                "source": "Tüm Cihazlar",
+                "title": "Tüm Sağlık Göstergeleriniz Normal Aralıkta",
+                "detail": "Tartı, akıllı saat ve bilekliğinizden alınan ölçümlerde herhangi bir risk veya tehlike sinyali görülmedi.",
             }
         )
 
