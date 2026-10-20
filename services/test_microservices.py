@@ -360,6 +360,26 @@ def test_analytics_insights_and_ai_advisor_endpoints():
             },
         )
 
+    # Ingest a newer wearable-only day (no scale weigh-in yet on that day)
+    # and verify /api/dashboard/overview still reports the latest scale weight, fat %, and muscle mass
+    tomorrow_str = (today + timedelta(days=1)).isoformat()
+    client.post(
+        "/api/ingest/webhook",
+        json={
+            "device_source": "galaxy_watch6",
+            "records": [{"date": tomorrow_str, "steps": 1200, "sleep_hours": 7.4}],
+        },
+    )
+    dash_overview = client.get("/api/dashboard/overview?range=30d&scope=all")
+    assert dash_overview.status_code == 200
+    dash_json = dash_overview.json()
+    metric_by_key = {m["key"]: m for m in dash_json["metrics"]}
+    assert metric_by_key["weight"]["value"] == "81.80 kg"
+    assert metric_by_key["body_fat"]["value"] != "-"
+    assert metric_by_key["muscle"]["value"] != "-"
+    assert dash_json["daily_rows"][0]["date"] == tomorrow_str
+    assert dash_json["daily_rows"][0]["weight_kg"] == 81.8
+
     insights_res = client.get("/api/analytics/insights?range=30d")
     assert insights_res.status_code == 200
     ins = insights_res.json()
