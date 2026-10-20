@@ -2,13 +2,14 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from services.ai_advisor.app import build_multi_device_prompt, generate_ai_report, list_ai_reports_data
 from services.analytics_anomaly.app import build_analytics_insights, filter_summaries_by_range_and_cycle
+from services.common import models
 from services.common.database import get_db
 from services.common.logger import attach_standard_middleware_and_handlers
 from services.common.migrate_db import ensure_default_config_and_seed, run_migrations
@@ -352,6 +353,20 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
     latest = summaries[-1]
     first = summaries[0]
 
+    scale_summaries = [s for s in summaries if s.weight_kg is not None]
+    if scale_summaries:
+        latest_scale: Any = scale_summaries[-1]
+        first_scale: Any = scale_summaries[0]
+    else:
+        scale_q = db.query(models.ScaleMeasurement)
+        if range == "cycle":
+            scale_q = scale_q.filter(models.ScaleMeasurement.date >= cycle_start)
+        latest_scale = scale_q.order_by(models.ScaleMeasurement.timestamp.desc()).first()
+        first_scale = scale_q.order_by(models.ScaleMeasurement.timestamp.asc()).first() or latest_scale
+
+    sleep_summaries = [s for s in summaries if s.sleep_hours is not None and s.sleep_hours > 0]
+    latest_sleep = sleep_summaries[-1] if sleep_summaries else latest
+
     def _fmt_delta(cur: float | None, prev: float | None, unit: str) -> str:
         if cur is None or prev is None:
             return f"0.0 {unit}"
@@ -359,26 +374,34 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
         sign = "+" if diff > 0 else ""
         return f"{sign}{diff} {unit}"
 
+    latest_w = getattr(latest_scale, "weight_kg", None) if latest_scale else None
+    first_w = getattr(first_scale, "weight_kg", None) if first_scale else None
+    latest_bf = getattr(latest_scale, "body_fat_pct", None) if latest_scale else None
+    first_bf = getattr(first_scale, "body_fat_pct", None) if first_scale else None
+    latest_mm = getattr(latest_scale, "muscle_mass_kg", None) if latest_scale else None
+    first_mm = getattr(first_scale, "muscle_mass_kg", None) if first_scale else None
+    latest_slp = getattr(latest_sleep, "sleep_hours", None) if latest_sleep else None
+
     metrics = [
         {
             "key": "weight",
             "label": "Güncel Kilonuz",
-            "value": f"{latest.weight_kg:.2f} kg" if latest.weight_kg is not None else "-",
-            "delta": f"Dönem değişimi: {_fmt_delta(latest.weight_kg, first.weight_kg, 'kg')}",
+            "value": f"{latest_w:.2f} kg" if latest_w is not None else "-",
+            "delta": f"Dönem değişimi: {_fmt_delta(latest_w, first_w, 'kg')}",
             "target_tab": "scale",
         },
         {
             "key": "body_fat",
             "label": "Vücut Yağ Oranı",
-            "value": f"%{latest.body_fat_pct:.1f}" if latest.body_fat_pct is not None else "-",
-            "delta": f"Dönem değişimi: {_fmt_delta(latest.body_fat_pct, first.body_fat_pct, 'puan')}",
+            "value": f"%{latest_bf:.1f}" if latest_bf is not None else "-",
+            "delta": f"Dönem değişimi: {_fmt_delta(latest_bf, first_bf, 'puan')}",
             "target_tab": "scale",
         },
         {
             "key": "muscle",
             "label": "Kas Kütlesi",
-            "value": f"{latest.muscle_mass_kg:.2f} kg" if latest.muscle_mass_kg is not None else "-",
-            "delta": f"Dönem değişimi: {_fmt_delta(latest.muscle_mass_kg, first.muscle_mass_kg, 'kg')}",
+            "value": f"{latest_mm:.2f} kg" if latest_mm is not None else "-",
+            "delta": f"Dönem değişimi: {_fmt_delta(latest_mm, first_mm, 'kg')}",
             "target_tab": "scale",
         },
         {
@@ -398,7 +421,7 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
         {
             "key": "sleep",
             "label": "Son Uyku Süresi",
-            "value": f"{latest.sleep_hours:.1f} saat" if latest.sleep_hours is not None else "-",
+            "value": f"{latest_slp:.1f} saat" if latest_slp is not None else "-",
             "delta": "İdeal Aralık: 7.5 - 8.5 saat",
             "target_tab": "wearables",
         },
@@ -447,8 +470,27 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
         },
     ]
 
+    carry_w = first_w
+    carry_bf = first_bf
+    carry_mm = first_mm
+    carry_wt = getattr(first_scale, "water_pct", None) if first_scale else None
+    resolved_by_id: Dict[int, Tuple[float | None, float | None, float | None, float | None]] = {}
+    for s in summaries:
+        if s.weight_kg is not None:
+            carry_w = s.weight_kg
+        if s.body_fat_pct is not None:
+            carry_bf = s.body_fat_pct
+        if s.muscle_mass_kg is not None:
+            carry_mm = s.muscle_mass_kg
+        if s.water_pct is not None:
+            carry_wt = s.water_pct
+        resolved_by_id[s.id] = (carry_w, carry_bf, carry_mm, carry_wt)
+
     daily_rows = []
     for s in reversed(summaries):
+        row_w, row_bf, row_mm, row_wt = resolved_by_id.get(
+            s.id, (s.weight_kg, s.body_fat_pct, s.muscle_mass_kg, s.water_pct)
+        )
         notes = []
         if (s.sleep_hours or 0) >= 7.0:
             notes.append("İyi Uyku")
@@ -460,16 +502,16 @@ def get_dashboard_overview(range: str = "30d", scope: str = "all", db: Session =
             notes.append("Düşük Hareket")
         else:
             notes.append("Orta Hareket")
-        if (s.water_pct or 50) < 50.0:
+        if (row_wt or 50) < 50.0:
             notes.append("Su Eksik")
         daily_rows.append(
             {
                 "id": s.id,
                 "date": s.date,
-                "weight_kg": s.weight_kg,
-                "body_fat_pct": s.body_fat_pct,
-                "muscle_mass_kg": s.muscle_mass_kg,
-                "water_pct": s.water_pct,
+                "weight_kg": row_w,
+                "body_fat_pct": row_bf,
+                "muscle_mass_kg": row_mm,
+                "water_pct": row_wt,
                 "steps": s.steps,
                 "sleep_hours": s.sleep_hours,
                 "resting_hr_bpm": s.resting_hr_bpm,

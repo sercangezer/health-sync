@@ -15,7 +15,7 @@ logger = attach_standard_middleware_and_handlers(app, "renpho-sync-service")
 
 _RENPHO_LOCK = threading.Lock()
 _RENPHO_SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
-_RENPHO_CACHE_FILE = Path("/tmp/renpho_session_cache.json")
+_RENPHO_CACHE_FILE = Path(os.getenv("RENPHO_CACHE_FILE", "/tmp/renpho_session_cache.json"))
 
 
 def _load_renpho_session(email: str) -> Dict[str, Any] | None:
@@ -38,6 +38,7 @@ def _save_renpho_session(email: str, token: str | None, user_id: Any) -> None:
     entry = {"email": email, "token": str(token), "user_id": user_id}
     _RENPHO_SESSION_CACHE[email] = entry
     try:
+        _RENPHO_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
         _RENPHO_CACHE_FILE.write_text(json.dumps(entry), encoding="utf-8")
     except Exception:
         pass

@@ -37,8 +37,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       RENPHO_EMAIL: ${RENPHO_EMAIL:-}
       RENPHO_PASSWORD: ${RENPHO_PASSWORD:-}
+      RENPHO_CACHE_FILE: /data/watch6_exports/.renpho_session_cache.json
       USER_HEIGHT_CM: ${USER_HEIGHT_CM:-180}
       USER_AGE: ${USER_AGE:-34}
+    volumes:
+      - watch6_exports:/data/watch6_exports
     depends_on:
       db:
         condition: service_healthy
@@ -60,6 +63,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       GARMIN_EMAIL: ${GARMIN_EMAIL:-}
       GARMIN_PASSWORD: ${GARMIN_PASSWORD:-}
+      GARMIN_TOKEN_DIR: /data/watch6_exports/.garmin_tokens
+    volumes:
+      - watch6_exports:/data/watch6_exports
     depends_on:
       db:
         condition: service_healthy
