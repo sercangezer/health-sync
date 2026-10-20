@@ -1,4 +1,5 @@
 import math
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
@@ -6,6 +7,7 @@ from services.common import models
 from services.common.database import get_db
 from services.common.logger import attach_standard_middleware_and_handlers
 from services.reconciliation.app import get_or_create_config, reconcile_all_days
+from services.renpho_sync.app import purge_foreign_scale_measurements
 
 app = FastAPI(title="Analytics, Correlation & Anomaly Microservice", version="1.0.0")
 logger = attach_standard_middleware_and_handlers(app, "analytics-anomaly-service")
@@ -25,6 +27,18 @@ def pearson_correlation(xs: List[float], ys: List[float]) -> float:
     if den_x == 0 or den_y == 0:
         return 0.0
     return round(max(-1.0, min(1.0, num / (den_x * den_y))), 2)
+
+
+def _correlation_strength_label(r_val: float) -> str:
+    if r_val <= -0.4:
+        return "Güçlü Negatif"
+    if r_val < -0.15:
+        return "Orta Negatif"
+    if r_val >= 0.4:
+        return "Güçlü Pozitif"
+    if r_val > 0.15:
+        return "Orta Pozitif"
+    return "Dengeli"
 
 
 def filter_summaries_by_range_and_cycle(
@@ -78,6 +92,7 @@ def compute_composition_quality(
             ),
         }
 
+    purge_foreign_scale_measurements(db)
     scale_rows = (
         db.query(models.ScaleMeasurement)
         .filter(models.ScaleMeasurement.date >= cycle_start)
@@ -114,14 +129,22 @@ def compute_composition_quality(
         else 0.0
     )
 
-    if weight_delta < -0.2 and muscle_share <= 22.0:
+    first_muscle_ratio = (first.muscle_mass_kg / max(first.weight_kg, 1.0)) * 100.0
+    latest_muscle_ratio = (latest.muscle_mass_kg / max(latest.weight_kg, 1.0)) * 100.0
+    relative_muscle_preserved = (
+        latest.body_fat_pct < first.body_fat_pct
+        and latest_muscle_ratio >= (first_muscle_ratio - 0.15)
+        and fat_share >= 55.0
+    )
+
+    if weight_delta < -0.2 and (muscle_share <= 25.0 or relative_muscle_preserved):
         status = "nominal"
         headline = "Sağlıklı Yağ Kaybı ve Kas Korunumu"
         interp = (
-            f"Döngü başından beri toplam {weight_delta} kg değişimin %{fat_share} kadarı yağ kütlesinden gerçekleşti. "
-            f"Kas kütlesi değişimi ({muscle_delta_kg} kg) güvenli fizyolojik sınırlar içindedir."
+            f"Döngü başından beri toplam {weight_delta} kg değişimin %{fat_share} kadarı ({fat_delta_kg} kg) yağ kütlesinden gerçekleşti. "
+            f"Vücut kas oranınız (%{first_muscle_ratio:.1f} → %{latest_muscle_ratio:.1f}) korunmakta olup {muscle_delta_kg} kg'lık BIA farkı hücre dışı su ve glikojen dengesinden kaynaklanmaktadır."
         )
-    elif weight_delta < -0.2 and muscle_share > 22.0:
+    elif weight_delta < -0.2 and muscle_share > 25.0:
         status = "warning"
         headline = "Kas Kaybı Payı Yüksek — Protein ve Direnç Egzersizi Gerekli"
         interp = (
@@ -171,22 +194,24 @@ def build_clinical_evaluation(
         .first()
     )
     latest_summary = summaries[-1] if summaries else None
+    scale_summaries = [s for s in summaries if s.weight_kg is not None]
+    latest_scale_summary = scale_summaries[-1] if scale_summaries else latest_summary
 
     current_weight_kg = float(
-        (latest_summary.weight_kg if latest_summary and latest_summary.weight_kg is not None else None)
+        (latest_scale_summary.weight_kg if latest_scale_summary and latest_scale_summary.weight_kg is not None else None)
         or (latest_scale.weight_kg if latest_scale else starting_weight_kg)
     )
     current_bmi = round(current_weight_kg / (height_m * height_m), 1)
     visceral_fat = float(
-        (latest_summary.visceral_fat if latest_summary and latest_summary.visceral_fat is not None else None)
+        (latest_scale_summary.visceral_fat if latest_scale_summary and latest_scale_summary.visceral_fat is not None else None)
         or (latest_scale.visceral_fat if latest_scale else 12.0)
     )
     muscle_mass_kg = float(
-        (latest_summary.muscle_mass_kg if latest_summary and latest_summary.muscle_mass_kg is not None else None)
+        (latest_scale_summary.muscle_mass_kg if latest_scale_summary and latest_scale_summary.muscle_mass_kg is not None else None)
         or (latest_scale.muscle_mass_kg if latest_scale else round(current_weight_kg * 0.62, 1))
     )
     water_pct = float(
-        (latest_summary.water_pct if latest_summary and latest_summary.water_pct is not None else None)
+        (latest_scale_summary.water_pct if latest_scale_summary and latest_scale_summary.water_pct is not None else None)
         or (latest_scale.water_pct if latest_scale else 50.0)
     )
 
@@ -210,9 +235,13 @@ def build_clinical_evaluation(
         )
         latest_hrv = hrv_row.hrv_ms if hrv_row else None
 
-    latest_rhr = latest_summary.resting_hr_bpm if latest_summary else None
-    latest_bb = latest_summary.body_battery_max if latest_summary else None
-    latest_sleep = latest_summary.sleep_hours if latest_summary else None
+    rhr_candidates = [s.resting_hr_bpm for s in summaries if s.resting_hr_bpm is not None]
+    bb_candidates = [s.body_battery_max for s in summaries if s.body_battery_max is not None]
+    sleep_candidates = [s.sleep_hours for s in summaries if s.sleep_hours is not None and s.sleep_hours > 0]
+
+    latest_rhr = rhr_candidates[-1] if rhr_candidates else (latest_summary.resting_hr_bpm if latest_summary else None)
+    latest_bb = bb_candidates[-1] if bb_candidates else (latest_summary.body_battery_max if latest_summary else None)
+    latest_sleep = sleep_candidates[-1] if sleep_candidates else (latest_summary.sleep_hours if latest_summary else None)
 
     spo2_row = (
         db.query(models.DeviceDailyMetric)
@@ -295,6 +324,12 @@ def build_clinical_evaluation(
         },
     ]
 
+    muscle_note = (
+        f"kas korunumu için günde {daily_protein_g} g protein hedefini sürdürün"
+        if composition.get("status") == "warning"
+        else f"{muscle_mass_kg:.1f} kg kas kütleniz korunuyor"
+    )
+
     return {
         "patient_name": full_name,
         "starting_weight_kg": starting_weight_kg,
@@ -310,7 +345,7 @@ def build_clinical_evaluation(
         "desk_break_minutes": 45,
         "headline": (
             f"Sayın {full_name}, başlangıçtan bugüne {total_lost_kg:.1f} kg kaybettiniz ve bel omurganızdaki yükü "
-            f"{spine_relief_kg:.0f} kg azalttınız ({muscle_mass_kg:.1f} kg kas kütleniz korunuyor)."
+            f"{spine_relief_kg:.0f} kg azalttınız ({muscle_note})."
             if total_lost_kg > 0
             else f"Sayın {full_name}, çoklu cihaz verileriniz tıbbi geçmişinize göre uzman hekim kurallarıyla izleniyor."
         ),
@@ -338,17 +373,19 @@ def detect_anomalies(
 
     anomalies: List[Dict[str, Any]] = []
     latest = summaries[-1]
+    scale_summaries = [s for s in summaries if s.weight_kg is not None]
+    latest_scale_row = scale_summaries[-1] if scale_summaries else latest
     clinical = build_clinical_evaluation(db, summaries, composition)
 
-    # 1. Muscle mass loss danger
-    if composition.get("muscle_loss_share_pct", 0.0) > 22.0:
+    # 1. Muscle mass loss danger (only when composition status is warning, i.e., true muscle loss)
+    if composition.get("status") == "warning" and composition.get("muscle_loss_share_pct", 0.0) > 25.0:
         w_delta = composition.get("total_weight_delta_kg", 0.0)
         m_delta = composition.get("muscle_mass_delta_kg", 0.0)
         m_share = composition.get("muscle_loss_share_pct", 0.0)
         anomalies.append(
             {
-                "id": f"muscle-loss-{latest.date}",
-                "date": latest.date,
+                "id": f"muscle-loss-{latest_scale_row.date}",
+                "date": latest_scale_row.date,
                 "severity": "critical",
                 "metric": f"Kas Kaybı: {m_delta} kg (Kilo kaybının %{m_share}'i)",
                 "source": "Akıllı Tartı (Renpho)",
@@ -385,17 +422,17 @@ def detect_anomalies(
         )
 
     # 3. Visceral Fat & Insulin Resistance clinical focus
-    if latest.visceral_fat is not None and latest.visceral_fat >= 13.0:
+    if latest_scale_row.visceral_fat is not None and latest_scale_row.visceral_fat >= 13.0:
         anomalies.append(
             {
-                "id": f"visceral-insulin-{latest.date}",
-                "date": latest.date,
+                "id": f"visceral-insulin-{latest_scale_row.date}",
+                "date": latest_scale_row.date,
                 "severity": "warning",
-                "metric": f"İç Organ Yağı: {latest.visceral_fat:.0f} (Hedef: ≤12) • VKİ: {clinical['current_bmi']}",
+                "metric": f"İç Organ Yağı: {latest_scale_row.visceral_fat:.0f} (Hedef: ≤12) • VKİ: {clinical['current_bmi']}",
                 "source": "Endokrinoloji Takibi",
                 "title": "Uyarı: İnsülin Direnci ve İç Organ Yağlanması Odağı",
                 "detail": (
-                    f"Başlangıçtan beri {clinical['total_lost_kg']} kg vererek önemli bir adım attınız; ancak iç organ yağınız ({latest.visceral_fat:.0f}) "
+                    f"Başlangıçtan beri {clinical['total_lost_kg']} kg vererek önemli bir adım attınız; ancak iç organ yağınız ({latest_scale_row.visceral_fat:.0f}) "
                     "insülin direncini beslemeye devam ediyor. Akşam yemeklerinden sonra 15-20 dk yürüyüş sabah kan şekeri ve insülin direncini doğrudan düşürür."
                 ),
             }
@@ -436,42 +473,48 @@ def detect_anomalies(
                 }
             )
 
-    # 6. Low daily step count / Spine & Sedentary warning
-    if latest.steps is not None and latest.steps < 3000:
+    # 6. Low daily step count / Spine & Sedentary warning (evaluate last completed day if today is still in progress)
+    today_utc_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    step_eval_row = (
+        summaries[-2]
+        if (latest.date >= today_utc_str and len(summaries) >= 2 and (latest.steps or 0) < 3000)
+        else latest
+    )
+    if step_eval_row.steps is not None and step_eval_row.steps < 3000:
         anomalies.append(
             {
-                "id": f"low-steps-{latest.date}",
-                "date": latest.date,
+                "id": f"low-steps-{step_eval_row.date}",
+                "date": step_eval_row.date,
                 "severity": "warning",
-                "metric": f"Günlük {latest.steps:,} adım (Hedef: {clinical['daily_step_target']:,}+)".replace(",", "."),
+                "metric": f"Günlük {step_eval_row.steps:,} adım (Hedef: {clinical['daily_step_target']:,}+)".replace(",", "."),
                 "source": "Omurga & Metabolizma",
                 "title": "Uyarı: Hareketsizlik (Bel Fıtığı ve İnsülin Direnci Riski)",
                 "detail": (
-                    f"Son günde {latest.steps:,} adım ölçüldü. Bel fıtığı ve kuyruk sokumu ameliyat geçmişiniz nedeniyle "
+                    f"Son tam günde {step_eval_row.steps:,} adım ölçüldü. Bel fıtığı ve kuyruk sokumu ameliyat geçmişiniz nedeniyle "
                     "her 45 dakikada bir ayağa kalkın ve gün içinde en az 30 dakika düşük tempolu yürüyüş ekleyin."
                 ).replace(",", "."),
             }
         )
 
     # 7. Dehydration / Gallbladder & Body Water % warning
-    if latest.water_pct is not None and latest.water_pct < 50.0:
+    if latest_scale_row.water_pct is not None and latest_scale_row.water_pct < 50.0:
         anomalies.append(
             {
-                "id": f"low-water-{latest.date}",
-                "date": latest.date,
+                "id": f"low-water-{latest_scale_row.date}",
+                "date": latest_scale_row.date,
                 "severity": "warning",
-                "metric": f"Vücut Suyu %{round(latest.water_pct, 1)} (Günlük Hedef: {clinical['daily_water_liters']} L)",
+                "metric": f"Vücut Suyu %{round(latest_scale_row.water_pct, 1)} (Günlük Hedef: {clinical['daily_water_liters']} L)",
                 "source": "Akıllı Tartı (Renpho)",
                 "title": "Uyarı: Vücut Su Oranı Düşük (Safra Akışı ve Ödem Riski)",
                 "detail": (
-                    f"Vücut su oranınız %{round(latest.water_pct, 1)} ile ideal sınırın (%50) altında. "
+                    f"Vücut su oranınız %{round(latest_scale_row.water_pct, 1)} ile ideal sınırın (%50) altında. "
                     f"Safra akışını akışkan tutmak, ödemi çözmek ve kasları korumak için bugün {clinical['daily_water_liters']} litre su tüketin."
                 ),
             }
         )
 
     # 8. Cumulative sleep debt
-    recent_sleep = [s.sleep_hours for s in summaries[-3:] if s.sleep_hours is not None]
+    recent_sleep = [s.sleep_hours for s in summaries[-3:] if s.sleep_hours is not None and s.sleep_hours > 0]
     if recent_sleep and (sum(recent_sleep) / len(recent_sleep)) < 6.6:
         avg_slp = round(sum(recent_sleep) / len(recent_sleep), 1)
         anomalies.append(
@@ -487,17 +530,19 @@ def detect_anomalies(
         )
 
     # 9. Always provide a clear positive summary when heart & spine relief are strong
-    if latest.resting_hr_bpm is not None and latest.resting_hr_bpm <= 62:
+    rhr_rows = [s for s in summaries if s.resting_hr_bpm is not None]
+    latest_rhr_row = rhr_rows[-1] if rhr_rows else latest
+    if latest_rhr_row.resting_hr_bpm is not None and latest_rhr_row.resting_hr_bpm <= 62:
         anomalies.append(
             {
-                "id": f"heart-nominal-{latest.date}",
-                "date": latest.date,
+                "id": f"heart-nominal-{latest_rhr_row.date}",
+                "date": latest_rhr_row.date,
                 "severity": "nominal",
-                "metric": f"Dinlenik Nabız {int(latest.resting_hr_bpm)} bpm • Omurga Kazancı -{clinical['spine_relief_kg']:.0f} kg",
+                "metric": f"Dinlenik Nabız {int(latest_rhr_row.resting_hr_bpm)} bpm • Omurga Kazancı -{clinical['spine_relief_kg']:.0f} kg",
                 "source": "Kardiyoloji & Ortopedi",
                 "title": "Olumlu: Kalp Kondisyonunuz Güçlü ve Omurga Yükünüz Azalıyor",
                 "detail": (
-                    f"Dinlenik nabzınız ({int(latest.resting_hr_bpm)} atım/dk) ve toparlanma puanınız ({int(latest.recovery_score)}/100) çok iyi seviyede. "
+                    f"Dinlenik nabzınız ({int(latest_rhr_row.resting_hr_bpm)} atım/dk) ve toparlanma puanınız ({int(latest.recovery_score)}/100) çok iyi seviyede. "
                     f"Başlangıçtan bugüne verdiğiniz {clinical['total_lost_kg']} kg ile bel omurlarınızdaki yükü {clinical['spine_relief_kg']:.0f} kg hafiflettiniz."
                 ),
             }
@@ -536,35 +581,57 @@ def build_analytics_insights(db: Session, range_key: str = "30d") -> Dict[str, A
             "rolling_series": [],
         }
 
-    weights = [float(s.weight_kg) for s in summaries if s.weight_kg is not None]
-    sleeps = [float(s.sleep_hours) for s in summaries if s.sleep_hours is not None]
-    stresses = [float(s.stress_score) for s in summaries if s.stress_score is not None]
-    hrvs = [float(s.hrv_ms) for s in summaries if s.hrv_ms is not None]
-    steps_list = [float(s.steps) for s in summaries]
-    body_fats = [float(s.body_fat_pct) for s in summaries if s.body_fat_pct is not None]
-    rhrs = [float(s.resting_hr_bpm) for s in summaries if s.resting_hr_bpm is not None]
-
-    # Next-day weight delta vs sleep
+    # Next-day weight delta vs sleep (paired by consecutive days)
     sleep_for_delta: List[float] = []
     next_day_weight_delta: List[float] = []
     for idx in range(len(summaries) - 1):
         cur_s = summaries[idx]
         nxt_s = summaries[idx + 1]
-        if cur_s.sleep_hours is not None and cur_s.weight_kg is not None and nxt_s.weight_kg is not None:
+        if (
+            cur_s.sleep_hours is not None
+            and cur_s.sleep_hours > 0
+            and cur_s.weight_kg is not None
+            and nxt_s.weight_kg is not None
+        ):
             sleep_for_delta.append(float(cur_s.sleep_hours))
             next_day_weight_delta.append(float(nxt_s.weight_kg - cur_s.weight_kg))
 
+    stress_hrv_pairs = [
+        (float(s.stress_score), float(s.hrv_ms))
+        for s in summaries
+        if s.stress_score is not None and s.hrv_ms is not None
+    ]
+    steps_fat_pairs = [
+        (float(s.steps), float(s.body_fat_pct))
+        for s in summaries
+        if s.steps and s.steps > 0 and s.body_fat_pct is not None
+    ]
+    rhr_sleep_pairs = [
+        (float(s.resting_hr_bpm), float(s.sleep_hours))
+        for s in summaries
+        if s.resting_hr_bpm is not None and s.sleep_hours is not None and s.sleep_hours > 0
+    ]
+
     r_sleep_weight = pearson_correlation(sleep_for_delta, next_day_weight_delta)
-    r_stress_hrv = pearson_correlation(stresses, hrvs)
-    r_steps_fat = pearson_correlation(steps_list, body_fats)
-    r_rhr_sleep = pearson_correlation(rhrs, sleeps)
+    r_stress_hrv = pearson_correlation(
+        [p[0] for p in stress_hrv_pairs],
+        [p[1] for p in stress_hrv_pairs],
+    )
+    r_steps_fat = pearson_correlation(
+        [p[0] for p in steps_fat_pairs],
+        [p[1] for p in steps_fat_pairs],
+    )
+    r_rhr_sleep = pearson_correlation(
+        [p[0] for p in rhr_sleep_pairs],
+        [p[1] for p in rhr_sleep_pairs],
+    )
 
     correlations = [
         {
             "id": "sleep-vs-weight-delta",
             "pair": "Uyku Süresi (Garmin/Watch6) ↔ Ertesi Gün Tartı Değişimi (Renpho)",
             "r_value": r_sleep_weight,
-            "strength": "Güçlü Negatif" if r_sleep_weight <= -0.4 else ("Orta Negatif" if r_sleep_weight < -0.15 else "Dengeli"),
+            "strength": _correlation_strength_label(r_sleep_weight),
             "interpretation": (
                 "Uyku süresi 7 saatin altına düştüğünde ertesi sabah tartıda ödem kaynaklı geçici artış eğilimi gözlenmektedir."
             ),
@@ -573,7 +640,7 @@ def build_analytics_insights(db: Session, range_key: str = "30d") -> Dict[str, A
             "id": "stress-vs-hrv",
             "pair": "Günlük Stres Skoru (Garmin) ↔ HRV Otonom Değişkenlik (Watch6/Garmin)",
             "r_value": r_stress_hrv,
-            "strength": "Güçlü Negatif" if r_stress_hrv <= -0.4 else "Orta Negatif",
+            "strength": _correlation_strength_label(r_stress_hrv),
             "interpretation": (
                 "Stres skoru yükseldiğinde HRV (RMSSD) düşmekte ve otonom sinir sistemi toparlanması yavaşlamaktadır."
             ),
@@ -582,18 +649,18 @@ def build_analytics_insights(db: Session, range_key: str = "30d") -> Dict[str, A
             "id": "steps-vs-bodyfat",
             "pair": "Günlük Adım & Aktif Kalori (Watch6) ↔ Vücut Yağ Oranı (Renpho ES-26BB-B)",
             "r_value": r_steps_fat,
-            "strength": "Güçlü Negatif" if r_steps_fat <= -0.4 else "Orta Negatif",
+            "strength": _correlation_strength_label(r_steps_fat),
             "interpretation": (
-                "8.500+ adım barajının korunduğu günlerde yağ oranı ve iç organ yağı (visceral fat) düzenli düşüş göstermektedir."
+                "Düzenli adım barajının korunduğu günlerde yağ oranı ve iç organ yağı (visceral fat) kademeli düşüş göstermektedir."
             ),
         },
         {
             "id": "rhr-vs-sleep",
             "pair": "Dinlenik Nabız RHR (Watch6) ↔ Toplam Uyku Kalitesi",
             "r_value": r_rhr_sleep,
-            "strength": "Orta Negatif" if r_rhr_sleep < -0.15 else "Dengeli",
+            "strength": _correlation_strength_label(r_rhr_sleep),
             "interpretation": (
-                "Kaliteli ve derin uyku evresinin yüksek olduğu gecelerde sabah dinlenik nabzı daha düşük ölçülmektedir."
+                "Kaliteli ve derin uyku evresinin yüksek olduğu gecelerde sabah dinlenik nabzı dengeli seyretmektedir."
             ),
         },
     ]

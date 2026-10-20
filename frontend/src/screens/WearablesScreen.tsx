@@ -121,12 +121,42 @@ export function WearablesScreen({
         emptyMessage="Karşılaştırılacak günlük cihaz kaydı bulunamadı."
         columns={[
           { key: 'date', header: 'Tarih', render: (row) => formatDateTR(row.date) },
-          { key: 'watch6_steps', header: 'Watch6 Adım', numeric: true },
-          { key: 'garmin_steps', header: 'Garmin Adım', numeric: true },
-          { key: 'watch6_sleep_hours', header: 'Watch6 Uyku', numeric: true },
-          { key: 'garmin_sleep_hours', header: 'Garmin Uyku', numeric: true },
-          { key: 'watch6_rhr_bpm', header: 'Watch6 Nabız', numeric: true },
-          { key: 'garmin_rhr_bpm', header: 'Garmin Nabız', numeric: true },
+          {
+            key: 'watch6_steps',
+            header: 'Watch6 Adım',
+            numeric: true,
+            render: (row) => (row.watch6_steps ? row.watch6_steps.toLocaleString('tr-TR') : '-'),
+          },
+          {
+            key: 'garmin_steps',
+            header: 'Garmin Adım',
+            numeric: true,
+            render: (row) => (row.garmin_steps ? row.garmin_steps.toLocaleString('tr-TR') : '-'),
+          },
+          {
+            key: 'watch6_sleep_hours',
+            header: 'Watch6 Uyku',
+            numeric: true,
+            render: (row) => (row.watch6_sleep_hours ? `${row.watch6_sleep_hours} sa` : '-'),
+          },
+          {
+            key: 'garmin_sleep_hours',
+            header: 'Garmin Uyku',
+            numeric: true,
+            render: (row) => (row.garmin_sleep_hours ? `${row.garmin_sleep_hours} sa` : '-'),
+          },
+          {
+            key: 'watch6_rhr_bpm',
+            header: 'Watch6 Nabız',
+            numeric: true,
+            render: (row) => (row.watch6_rhr_bpm ? `${row.watch6_rhr_bpm} bpm` : '-'),
+          },
+          {
+            key: 'garmin_rhr_bpm',
+            header: 'Garmin Nabız',
+            numeric: true,
+            render: (row) => (row.garmin_rhr_bpm ? `${row.garmin_rhr_bpm} bpm` : '-'),
+          },
           {
             key: 'agreement_pct',
             header: 'Uyum',
