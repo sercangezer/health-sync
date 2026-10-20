@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ResponsiveLine } from '@nivo/line';
 import { ResponsiveBar } from '@nivo/bar';
+import { formatShortDateTR } from '../format';
 import { Button, Panel, StateBlock } from '../primitives';
 
 function readActiveChartPalette() {
@@ -88,7 +89,13 @@ export function LineChart({
     return () => obs.disconnect();
   }, []);
 
-  const cappedSeries = series.slice(0, 6);
+  const cappedSeries = series.slice(0, 6).map((s) => ({
+    ...s,
+    data: s.data.map((pt) => ({
+      ...pt,
+      x: typeof pt.x === 'string' ? formatShortDateTR(pt.x) : pt.x,
+    })),
+  }));
   const hasPoints = cappedSeries.some((s) => s.data.length > 0);
 
   return (
@@ -221,6 +228,14 @@ export function BarChart({
     return () => obs.disconnect();
   }, []);
 
+  const formattedData = data.map((row) => {
+    const idxVal = row[indexBy];
+    if (typeof idxVal === 'string') {
+      return { ...row, [indexBy]: formatShortDateTR(idxVal) };
+    }
+    return row;
+  });
+
   return (
     <Panel
       title={title}
@@ -236,12 +251,12 @@ export function BarChart({
         <StateBlock state="loading" title={`${title} yükleniyor`} description="Grafik serisi hazırlanıyor..." />
       ) : error ? (
         <StateBlock state="error" title={`${title} hatası`} description={error} />
-      ) : data.length === 0 ? (
+      ) : formattedData.length === 0 ? (
         <StateBlock state="empty" title={title} description="Seçili zaman penceresinde grafik verisi bulunmuyor." />
       ) : (
         <div ref={boxRef} className="hs-chart-box" role="img" aria-label={title}>
           <ResponsiveBar
-            data={data}
+            data={formattedData}
             ariaLabel={title}
             keys={keys.slice(0, 6)}
             indexBy={indexBy}

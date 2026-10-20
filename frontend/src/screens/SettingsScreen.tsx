@@ -3,6 +3,9 @@ import { apiClient } from '../api/client';
 import {
   Button,
   DetailTemplate,
+  formatDateTimeTR,
+  formatDeviceLabelTR,
+  formatIntervalTR,
   Icon,
   Input,
   Panel,
@@ -247,7 +250,7 @@ export function SettingsScreen({
         },
         {
           label: 'Senkronizasyon Sıklığı',
-          value: `${settings.auto_sync_interval_minutes || 60} dk`,
+          value: formatIntervalTR(settings.auto_sync_interval_minutes || 60),
         },
       ]}
     >
@@ -385,7 +388,11 @@ export function SettingsScreen({
         data={heartbeat.sources || []}
         emptyMessage="Henüz kayıtlı cihaz bulunamadı."
         columns={[
-          { key: 'device_label', header: 'Cihaz' },
+          {
+            key: 'device_label',
+            header: 'Cihaz',
+            render: (row) => formatDeviceLabelTR(row.device_label, row.source),
+          },
           {
             key: 'status',
             header: 'Durum',
@@ -412,7 +419,11 @@ export function SettingsScreen({
               />
             ),
           },
-          { key: 'last_seen_at', header: 'Son Güncelleme' },
+          {
+            key: 'last_seen_at',
+            header: 'Son Güncelleme',
+            render: (row) => formatDateTimeTR(row.last_seen_at),
+          },
           { key: 'last_payload_summary', header: 'Son İşlem' },
         ]}
       />

@@ -177,7 +177,12 @@ export function Table<T extends Record<string, any>>({
                   {visibleColumns.map((col) => {
                     const rawVal = row[col.key];
                     const rendered = col.render ? col.render(row) : rawVal ?? '-';
-                    const tooltipStr = typeof rawVal === 'string' || typeof rawVal === 'number' ? String(rawVal) : col.header;
+                    const tooltipStr =
+                      typeof rendered === 'string' || typeof rendered === 'number'
+                        ? String(rendered)
+                        : typeof rawVal === 'string' || typeof rawVal === 'number'
+                          ? String(rawVal)
+                          : col.header;
                     return (
                       <td key={col.key} className={col.numeric ? 'hs-cell-numeric' : undefined}>
                         <Tooltip text={tooltipStr}>
