@@ -3,6 +3,7 @@ import { apiClient } from '../api/client';
 import {
   Button,
   DetailTemplate,
+  formatDateTR,
   Icon,
   Input,
   Panel,
@@ -154,7 +155,7 @@ export function ProfileScreen({
             onChange={(val) => setProfile({ ...profile, full_name: val })}
           />
           <Input
-            label="Doğum Tarihi (YYYY-AA-GG)"
+            label={`Doğum Tarihi (${formatDateTR(profile.birth_date)})`}
             value={String(profile.birth_date || '')}
             placeholder="1990-05-15"
             onChange={(val) => setProfile({ ...profile, birth_date: val })}

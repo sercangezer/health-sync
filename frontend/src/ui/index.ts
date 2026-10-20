@@ -5,3 +5,4 @@ export * from './Table';
 export * from './Shell';
 export * from './charts/Charts';
 export * from './templates/Templates';
+export * from './format';

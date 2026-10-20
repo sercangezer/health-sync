@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import {
   Button,
+  formatDateTR,
   Icon,
   Input,
   ListTemplate,
@@ -175,7 +176,7 @@ export function ScaleScreen({
         onBulkAction={handleBulkDelete}
         emptyMessage="Henüz kaydedilmiş tartı ölçümü bulunmuyor."
         columns={[
-          { key: 'date', header: 'Tarih' },
+          { key: 'date', header: 'Tarih', render: (row) => formatDateTR(row.date) },
           { key: 'weight_kg', header: 'Kilo (kg)', numeric: true },
           { key: 'body_fat_pct', header: 'Yağ (%)', numeric: true },
           { key: 'muscle_mass_kg', header: 'Kas (kg)', numeric: true },

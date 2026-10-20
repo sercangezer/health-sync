@@ -14,6 +14,46 @@ logger = attach_standard_middleware_and_handlers(app, "ai-advisor-service")
 
 VALID_FOCUS_AREAS = {"holistic", "body_composition", "recovery_sleep", "wearable_calibration"}
 
+_TR_MONTHS = (
+    "Ocak",
+    "Şubat",
+    "Mart",
+    "Nisan",
+    "Mayıs",
+    "Haziran",
+    "Temmuz",
+    "Ağustos",
+    "Eylül",
+    "Ekim",
+    "Kasım",
+    "Aralık",
+)
+
+
+def _format_date_tr(date_str: str | None) -> str:
+    if not date_str:
+        return "Belirtilmedi"
+    parts = str(date_str).strip().split("-")
+    if len(parts) == 3 and all(p.isdigit() for p in parts):
+        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+        if 1 <= month <= 12 and 1 <= day <= 31:
+            return f"{day} {_TR_MONTHS[month - 1]} {year}"
+    return str(date_str)
+
+
+def _format_status_tr(status: str | None) -> str:
+    key = str(status or "").strip().lower()
+    if key == "nominal":
+        return "İyi Durumda"
+    if key == "warning":
+        return "Dikkat"
+    if key == "critical":
+        return "Kritik"
+    if key == "pending":
+        return "Veri Bekleniyor"
+    return str(status or "İyi Durumda")
+
+
 
 def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     cfg = get_or_create_config(db)
@@ -31,7 +71,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     scale_lines = []
     for s in scale_rows:
         scale_lines.append(
-            f"- {s.date}: Kilo={s.weight_kg} kg | BMI={s.bmi} | Yağ=%{s.body_fat_pct} | "
+            f"- {_format_date_tr(s.date)}: Kilo={s.weight_kg} kg | BMI={s.bmi} | Yağ=%{s.body_fat_pct} | "
             f"Kas={s.muscle_mass_kg} kg | Su=%{s.water_pct} | İç Organ Yağı={s.visceral_fat} | BMR={s.bmr_kcal} kcal"
         )
     scale_block = "\n".join(scale_lines) if scale_lines else "- Aktif döngü penceresinde henüz tartı verisi yok."
@@ -43,7 +83,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
     corr_block = "\n".join(corr_lines) if corr_lines else "- Yeterli korelasyon penceresi oluşmadı."
 
     anom_lines = [
-        f"- [{a['severity'].upper()}] {a['title']} ({a['metric']}): {a['detail']}"
+        f"- [{_format_status_tr(a.get('severity'))}] {a['title']} ({a['metric']}): {a['detail']}"
         for a in insights.get("anomalies", [])
     ]
     anom_block = "\n".join(anom_lines) if anom_lines else "- Aktif anomali yok."
@@ -72,7 +112,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
         "bir klinik danışman heyetisin. Aşağıda **Renpho ES-26BB-B** akıllı tartı, **Samsung Galaxy Watch6** ve "
         "**Garmin Smart Band** cihazlarımdan otomatik toplanan güncel sağlık verilerim ve tıbbi geçmişim yer almaktadır.\n\n"
         f"## 1. Kişisel Profil, Tıbbi Geçmiş ve Hedefler\n"
-        f"- Doğum Tarihi: {birth_date} | Cinsiyet: {gender_label}\n"
+        f"- Doğum Tarihi: {_format_date_tr(birth_date)} | Cinsiyet: {gender_label}\n"
         f"- Boy: {cfg.height_cm} cm | Başlangıç Kilosu: {start_w} kg | Güncel Kilo: {clinical.get('current_weight_kg', start_w)} kg | Hedef Kilo: {cfg.target_weight_kg} kg\n"
         f"- Başlangıçtan Bugüne Verilen Kilo: {clinical.get('total_lost_kg', 0)} kg | Bel Omurgası Yük Azalımı: -{clinical.get('spine_relief_kg', 0)} kg\n"
         f"- Geçirilen Ameliyatlar: {surgeries}\n"
@@ -80,7 +120,7 @@ def build_multi_device_prompt(db: Session) -> Dict[str, Any]:
         f"- İlaç ve Takviyeler: {meds}\n"
         f"- Beslenme Notları / Alerjiler: {allergies}\n"
         f"- Kişiselleştirilmiş Günlük Hedefler: {clinical.get('daily_water_liters', 3.0)} L Su | {clinical.get('daily_protein_g', 150)} g Protein | {clinical.get('daily_step_target', 6500)}+ Adım\n"
-        f"- Güncel Toparlanma Skoru: {insights.get('recovery_score', 0)}/100 ({insights.get('recovery_status')})\n"
+        f"- Güncel Toparlanma Skoru: {insights.get('recovery_score', 0)}/100 ({_format_status_tr(str(insights.get('recovery_status')))})\n"
         f"- Kilo Değişim Kalitesi: {comp_q.get('headline')} "
         f"(Toplam: {comp_q.get('total_weight_delta_kg')} kg, Yağ: {comp_q.get('fat_mass_delta_kg')} kg, "
         f"Kas: {comp_q.get('muscle_mass_delta_kg')} kg, Su: {comp_q.get('water_pct_delta')} puan)\n\n"
@@ -168,7 +208,7 @@ def generate_ai_report(db: Session, focus_area: str = "holistic") -> Dict[str, A
             f"### 2. Branş Bazlı Uzman Hekim Notları\n"
             f"{pillars_md}\n\n"
             f"### 3. Kardiyovasküler ve Sensör Özeti\n"
-            f"- **Bileşik Toparlanma Skoru:** `{rec_score}/100` (`{insights.get('recovery_status')}`)\n"
+            f"- **Bileşik Toparlanma Skoru:** `{rec_score}/100` (`{_format_status_tr(str(insights.get('recovery_status')))}`)\n"
             f"- **Sensör Uyum Skoru:** Watch6 ve Garmin arasında `%{agreement}` ölçüm tutarlılığı mevcuttur.\n\n"
             f"### 4. Önümüzdeki 7 Gün İçin Doktor Reçetesi\n"
             f"1. **Safra ve Kas Korumalı Beslenme:** Günlük **{clinical.get('daily_protein_g', 150)} g protein** ve **{clinical.get('daily_water_liters', 3.5)} L su** hedefini koruyun; safra çamurunu önlemek için 14 saati aşan açlıklardan kaçının.\n"

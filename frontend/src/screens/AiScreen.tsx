@@ -4,6 +4,10 @@ import {
   Button,
   CodeBlock,
   DetailTemplate,
+  formatDateTimeTR,
+  formatFocusAreaTR,
+  formatIntervalTR,
+  formatProviderTR,
   Icon,
   Panel,
   Select,
@@ -144,7 +148,7 @@ export function AiScreen({
       kvItems={[
         { label: 'Veri Günü', value: `${promptData.data_days_count} gün` },
         { label: 'Kayıtlı Rapor', value: `${reports.length} rapor` },
-        { label: 'Otomatik Çekim', value: `${syncStatus?.auto_sync_interval_minutes || 60} dk` },
+        { label: 'Otomatik Çekim', value: formatIntervalTR(syncStatus?.auto_sync_interval_minutes || 60) },
       ]}
     >
       <Toast message={toastMsg} onDismiss={() => setToastMsg(null)} />
@@ -161,7 +165,7 @@ export function AiScreen({
               <div className="hs-template">
                 {latestReport ? (
                   <Panel
-                    title={`Güncel Değerlendirme (#${latestReport.id})`}
+                    title={`Güncel Değerlendirme — ${formatFocusAreaTR(latestReport.focus_area)} (${formatDateTimeTR(latestReport.created_at)})`}
                   >
                     <CodeBlock content={latestReport.summary_markdown} />
                   </Panel>
@@ -173,8 +177,16 @@ export function AiScreen({
                     emptyMessage="Henüz üretilmiş yapay zeka raporu bulunmuyor."
                     columns={[
                       { key: 'id', header: 'No', numeric: true },
-                      { key: 'created_at', header: 'Tarih' },
-                      { key: 'focus_area', header: 'Konu' },
+                      {
+                        key: 'created_at',
+                        header: 'Tarih',
+                        render: (row) => formatDateTimeTR(row.created_at),
+                      },
+                      {
+                        key: 'focus_area',
+                        header: 'Konu',
+                        render: (row) => formatFocusAreaTR(row.focus_area),
+                      },
                     ]}
                   />
                 )}
@@ -209,8 +221,16 @@ export function AiScreen({
                   pageSize={6}
                   data={syncStatus?.recent_logs || []}
                   columns={[
-                    { key: 'created_at', header: 'Zaman' },
-                    { key: 'provider', header: 'Cihaz' },
+                    {
+                      key: 'created_at',
+                      header: 'Zaman',
+                      render: (row) => formatDateTimeTR(row.created_at),
+                    },
+                    {
+                      key: 'provider',
+                      header: 'Cihaz',
+                      render: (row) => formatProviderTR(row.provider),
+                    },
                     {
                       key: 'status',
                       header: 'Durum',

@@ -3,6 +3,7 @@ import { apiClient } from '../api/client';
 import {
   BarChart,
   DetailTemplate,
+  formatDateTR,
   Panel,
   Select,
   StateBlock,
@@ -200,7 +201,7 @@ export function InsightsScreen({
                 data={insights.anomalies || []}
                 emptyMessage="Uyarı kaydı bulunamadı."
                 columns={[
-                  { key: 'date', header: 'Tarih' },
+                  { key: 'date', header: 'Tarih', render: (row) => formatDateTR(row.date) },
                   {
                     key: 'severity',
                     header: 'Durum',

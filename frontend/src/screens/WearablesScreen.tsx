@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { apiClient } from '../api/client';
 import {
   DetailTemplate,
+  formatDateTR,
   FormTemplate,
   Input,
   Select,
@@ -119,7 +120,7 @@ export function WearablesScreen({
         data={comparison.rows || []}
         emptyMessage="Karşılaştırılacak günlük cihaz kaydı bulunamadı."
         columns={[
-          { key: 'date', header: 'Tarih' },
+          { key: 'date', header: 'Tarih', render: (row) => formatDateTR(row.date) },
           { key: 'watch6_steps', header: 'Watch6 Adım', numeric: true },
           { key: 'garmin_steps', header: 'Garmin Adım', numeric: true },
           { key: 'watch6_sleep_hours', header: 'Watch6 Uyku', numeric: true },
@@ -190,7 +191,7 @@ export function WearablesScreen({
         />
 
         <Input
-          label="Takip Başlangıç Tarihi (YYYY-AA-GG)"
+          label={`Takip Başlangıç Tarihi (${formatDateTR(rules.cycle_start_date)})`}
           value={String(rules.cycle_start_date || '')}
           onChange={(val) => setRules({ ...rules, cycle_start_date: val })}
           error={cycleDateError}

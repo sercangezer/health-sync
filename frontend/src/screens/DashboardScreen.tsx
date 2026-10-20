@@ -3,6 +3,8 @@ import { apiClient } from '../api/client';
 import {
   Button,
   DashboardTemplate,
+  formatDateTR,
+  formatDateTimeTR,
   Icon,
   LineChart,
   Panel,
@@ -138,7 +140,7 @@ export function DashboardScreen({
   return (
     <DashboardTemplate
       title="Sağlık Özeti"
-      lastUpdated={`${overview.last_updated?.slice(0, 16).replace('T', ' ')} • ${syncHours >= 1 ? `${syncHours} saatte bir` : `${syncStatus?.auto_sync_interval_minutes || 60} dk'da bir`} otomatik senkron`}
+      lastUpdated={`${formatDateTimeTR(overview.last_updated)} • ${syncHours >= 1 ? `${syncHours} saatte bir` : `${syncStatus?.auto_sync_interval_minutes || 60} dk'da bir`} otomatik senkron`}
       metrics={overview.metrics || []}
       onSelectMetricTarget={onNavigateTab}
       filterBar={
@@ -257,7 +259,7 @@ export function DashboardScreen({
         data={overview.daily_rows || []}
         emptyMessage="Seçili dönemde henüz günlük kayıt bulunmuyor."
         columns={[
-          { key: 'date', header: 'Tarih' },
+          { key: 'date', header: 'Tarih', render: (row) => formatDateTR(row.date) },
           { key: 'weight_kg', header: 'Kilo (kg)', numeric: true },
           { key: 'body_fat_pct', header: 'Yağ (%)', numeric: true },
           { key: 'muscle_mass_kg', header: 'Kas (kg)', numeric: true },
