@@ -516,3 +516,48 @@ def test_integration_settings_and_webhook_heartbeat_monitor():
     assert auth_wh.status_code == 200
     assert auth_wh.json()["ingested_count"] == 1
 
+
+def test_renpho_rate_limit_cooldown_and_watch6_single_log(monkeypatch):
+    import sys
+    import types
+    from services.renpho_sync import app as renpho_app
+
+    # Seed one BLE scale record so existing_total > 0
+    client.post(
+        "/api/ingest/ble-scale",
+        json={"timestamp": "2026-10-18T08:00:00Z", "weight_kg": 81.5, "impedance_ohm": 470.0},
+    )
+    client.put(
+        "/api/settings",
+        json={
+            "renpho_email": "sercan@ornek.com",
+            "renpho_password": "secret-renpho-pass",
+            "garmin_email": "",
+            "watch_export_dir": "/data/watch_exports",
+            "auto_sync_interval_minutes": 60,
+            "webhook_expected_interval_minutes": 60,
+        },
+    )
+
+    class FakeRateLimitedRenphoClient:
+        def __init__(self, email, password):
+            self.email = email
+            self.password = password
+            self.token = None
+            self.user_id = None
+
+        def login(self):
+            raise RuntimeError("Login failed: code=-114, msg=")
+
+    fake_mod = types.ModuleType("renpho")
+    fake_mod.RenphoClient = FakeRateLimitedRenphoClient  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "renpho", fake_mod)
+    renpho_app._clear_renpho_session("sercan@ornek.com")
+
+    res = client.post("/api/sync/trigger", json={"provider": "renpho"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "nominal"
+    assert "geçici hız sınırında" in body["message"]
+
+

@@ -22,7 +22,9 @@ app = FastAPI(title="Samsung Galaxy Watch6 & Health Connect Ingest Microservice"
 logger = attach_standard_middleware_and_handlers(app, "watch6-ingest-service")
 
 
-def upsert_watch6_daily_records(db: Session, records: List[Dict[str, Any]], source: str = "galaxy_watch6") -> int:
+def upsert_watch6_daily_records(
+    db: Session, records: List[Dict[str, Any]], source: str = "galaxy_watch6", emit_log: bool = True
+) -> int:
     if not records:
         raise HTTPException(status_code=400, detail="Gönderilen kayıt listesi (records) boş olamaz.")
 
@@ -33,12 +35,12 @@ def upsert_watch6_daily_records(db: Session, records: List[Dict[str, Any]], sour
         )
 
     if source == "garmin_band":
-        return upsert_garmin_daily_records(db, records)
+        return upsert_garmin_daily_records(db, records, emit_log=emit_log)
 
     if source == "renpho_es26bb":
         count = 0
         for r in records:
-            upsert_scale_measurement(db, r)
+            upsert_scale_measurement(db, r, emit_log=emit_log)
             count += 1
         return count
 
@@ -104,25 +106,26 @@ def upsert_watch6_daily_records(db: Session, records: List[Dict[str, Any]], sour
         existing.updated_at = datetime.now(timezone.utc)
         count += 1
 
-    db.add(
-        models.SyncLog(
-            provider="watch6",
-            status="nominal",
-            records_processed=count,
-            message=f"Samsung Galaxy Watch6 Health Connect Webhook ile {count} günlük kayıt işlendi.",
+    if emit_log:
+        db.add(
+            models.SyncLog(
+                provider="watch6",
+                status="nominal",
+                records_processed=count,
+                message=f"Samsung Galaxy Watch6 Health Connect Webhook ile {count} günlük kayıt işlendi.",
+            )
         )
-    )
-    db.add(
-        models.WebhookHeartbeat(
-            source="galaxy_watch6",
-            device_label="Samsung Galaxy Watch6 (Health Connect Webhook)",
-            event_type="webhook_ingest",
-            status="healthy",
-            records_received=count,
-            latency_ms=1.6,
-            payload_summary=f"Health Connect Webhook üzerinden {count} günlük kayıt alındı.",
+        db.add(
+            models.WebhookHeartbeat(
+                source="galaxy_watch6",
+                device_label="Samsung Galaxy Watch6 (Health Connect Webhook)",
+                event_type="webhook_ingest",
+                status="healthy",
+                records_received=count,
+                latency_ms=1.6,
+                payload_summary=f"Health Connect Webhook üzerinden {count} günlük kayıt alındı.",
+            )
         )
-    )
     db.commit()
     return count
 
@@ -380,7 +383,7 @@ def _extract_sqlite_from_zip_or_raw(raw_bytes: bytes) -> bytes:
     return raw_bytes
 
 
-def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
+def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session, emit_log: bool = True) -> int:
     raw_bytes = _extract_sqlite_from_zip_or_raw(raw_bytes)
     if not raw_bytes.startswith(b"SQLite format 3\x00"):
         raise HTTPException(
@@ -578,7 +581,7 @@ def parse_health_connect_sqlite_bytes(raw_bytes: bytes, db: Session) -> int:
 
         if not records:
             return 0
-        return upsert_watch6_daily_records(db, records, source="galaxy_watch6")
+        return upsert_watch6_daily_records(db, records, source="galaxy_watch6", emit_log=emit_log)
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -740,7 +743,7 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
                 try:
                     data = _download_gdrive_file_bytes(fid)
                     if data.startswith(b"PK\x03\x04") or data.startswith(b"SQLite format 3\x00"):
-                        imported += parse_health_connect_sqlite_bytes(data, db)
+                        imported += parse_health_connect_sqlite_bytes(data, db, emit_log=False)
                 except Exception as inner_exc:
                     logger.warning(f"Skipped Google Drive folder item {fid}: {inner_exc}")
         except Exception as exc:
@@ -759,7 +762,7 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
     elif gdrive_id:
         try:
             data = _download_gdrive_file_bytes(gdrive_id)
-            imported += parse_health_connect_sqlite_bytes(data, db)
+            imported += parse_health_connect_sqlite_bytes(data, db, emit_log=False)
         except Exception as exc:
             err_msg = f"Google Drive Health Connect yedeği indirilemedi ({gdrive_id}): {exc}"
             logger.warning(err_msg)
@@ -782,7 +785,7 @@ def sync_watch6_export_dir(db: Session) -> Dict[str, Any]:
                 with open(fpath, "rb") as f:
                     data = f.read()
                 if fname.endswith((".db", ".sqlite", ".zip")):
-                    imported += parse_health_connect_sqlite_bytes(data, db)
+                    imported += parse_health_connect_sqlite_bytes(data, db, emit_log=False)
                 elif fname.endswith(".csv"):
                     imported += parse_csv_bytes(data, "galaxy_watch6", db)
             except Exception as exc:

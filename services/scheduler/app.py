@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, Dict
 from fastapi import Depends, FastAPI, HTTPException
@@ -13,6 +14,8 @@ from services.garmin_sync.app import sync_garmin_cloud
 from services.reconciliation.app import reconcile_all_days
 from services.renpho_sync.app import sync_renpho_cloud
 from services.watch6_ingest.app import sync_watch6_export_dir
+
+_ORCHESTRATED_SYNC_LOCK = threading.Lock()
 
 
 async def _periodic_auto_sync_loop():
@@ -143,67 +146,68 @@ def trigger_orchestrated_sync(db: Session, provider: str = "all") -> Dict[str, A
             detail=f"Geçersiz senkronizasyon sağlayıcısı: '{target}'. Geçerli değerler: all, renpho, garmin, watch6.",
         )
 
-    total_processed = 0
-    messages = []
+    with _ORCHESTRATED_SYNC_LOCK:
+        total_processed = 0
+        messages = []
 
-    if target in ("all", "renpho"):
-        res_r = registry.call_http_or_local(
-            service_name="renpho-sync-service",
-            base_url=os.getenv("RENPHO_SERVICE_URL"),
-            method="POST",
-            path="/sync",
-            local_handler=lambda: sync_renpho_cloud(db),
-            fallback=lambda: {
-                "status": "degraded",
-                "provider": "renpho",
-                "records_processed": 0,
-                "message": "Renpho mikroservisi devre kesici (Circuit Breaker) korumasında.",
-            },
-        )
-        total_processed += int(res_r.get("records_processed", 0))
-        messages.append(res_r.get("message", ""))
+        if target in ("all", "renpho"):
+            res_r = registry.call_http_or_local(
+                service_name="renpho-sync-service",
+                base_url=os.getenv("RENPHO_SERVICE_URL"),
+                method="POST",
+                path="/sync",
+                local_handler=lambda: sync_renpho_cloud(db),
+                fallback=lambda: {
+                    "status": "degraded",
+                    "provider": "renpho",
+                    "records_processed": 0,
+                    "message": "Renpho mikroservisi devre kesici (Circuit Breaker) korumasında.",
+                },
+            )
+            total_processed += int(res_r.get("records_processed", 0))
+            messages.append(res_r.get("message", ""))
 
-    if target in ("all", "garmin"):
-        res_g = registry.call_http_or_local(
-            service_name="garmin-sync-service",
-            base_url=os.getenv("GARMIN_SERVICE_URL"),
-            method="POST",
-            path="/sync",
-            local_handler=lambda: sync_garmin_cloud(db),
-            fallback=lambda: {
-                "status": "degraded",
-                "provider": "garmin",
-                "records_processed": 0,
-                "message": "Garmin mikroservisi devre kesici (Circuit Breaker) korumasında.",
-            },
-        )
-        total_processed += int(res_g.get("records_processed", 0))
-        messages.append(res_g.get("message", ""))
+        if target in ("all", "garmin"):
+            res_g = registry.call_http_or_local(
+                service_name="garmin-sync-service",
+                base_url=os.getenv("GARMIN_SERVICE_URL"),
+                method="POST",
+                path="/sync",
+                local_handler=lambda: sync_garmin_cloud(db),
+                fallback=lambda: {
+                    "status": "degraded",
+                    "provider": "garmin",
+                    "records_processed": 0,
+                    "message": "Garmin mikroservisi devre kesici (Circuit Breaker) korumasında.",
+                },
+            )
+            total_processed += int(res_g.get("records_processed", 0))
+            messages.append(res_g.get("message", ""))
 
-    if target in ("all", "watch6"):
-        res_w = registry.call_http_or_local(
-            service_name="watch6-ingest-service",
-            base_url=os.getenv("WATCH6_SERVICE_URL"),
-            method="POST",
-            path="/sync",
-            local_handler=lambda: sync_watch6_export_dir(db),
-            fallback=lambda: {
-                "status": "degraded",
-                "provider": "watch6",
-                "records_processed": 0,
-                "message": "Watch6 mikroservisi devre kesici (Circuit Breaker) korumasında.",
-            },
-        )
-        total_processed += int(res_w.get("records_processed", 0))
-        messages.append(res_w.get("message", ""))
+        if target in ("all", "watch6"):
+            res_w = registry.call_http_or_local(
+                service_name="watch6-ingest-service",
+                base_url=os.getenv("WATCH6_SERVICE_URL"),
+                method="POST",
+                path="/sync",
+                local_handler=lambda: sync_watch6_export_dir(db),
+                fallback=lambda: {
+                    "status": "degraded",
+                    "provider": "watch6",
+                    "records_processed": 0,
+                    "message": "Watch6 mikroservisi devre kesici (Circuit Breaker) korumasında.",
+                },
+            )
+            total_processed += int(res_w.get("records_processed", 0))
+            messages.append(res_w.get("message", ""))
 
-    reconcile_all_days(db)
-    return {
-        "status": "nominal",
-        "provider": target,
-        "records_processed": total_processed,
-        "message": " | ".join(m for m in messages if m),
-    }
+        reconcile_all_days(db)
+        return {
+            "status": "nominal",
+            "provider": target,
+            "records_processed": total_processed,
+            "message": " | ".join(m for m in messages if m),
+        }
 
 
 @app.get("/health")

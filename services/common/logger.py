@@ -38,19 +38,28 @@ def setup_logger(component_name: str) -> logging.Logger:
     level_name = os.getenv("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, level_name, logging.INFO)
 
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(SingleLineJsonFormatter(component_name))
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.WARNING)
+    root_logger.handlers = [handler]
+
     logger = logging.getLogger(component_name)
     logger.setLevel(level)
     logger.propagate = False
-
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(SingleLineJsonFormatter(component_name))
     logger.handlers = [handler]
 
-    for uv_name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for uv_name in ("uvicorn", "uvicorn.error"):
         uv_logger = logging.getLogger(uv_name)
         uv_logger.setLevel(level)
         uv_logger.handlers = [handler]
         uv_logger.propagate = False
+
+    uv_access = logging.getLogger("uvicorn.access")
+    uv_access.handlers = []
+    uv_access.propagate = False
+    uv_access.disabled = True
 
     return logger
 
@@ -62,10 +71,18 @@ def attach_standard_middleware_and_handlers(app: FastAPI, component_name: str) -
     async def correlation_and_access_log(request: Request, call_next):
         corr_id = request.headers.get("X-Correlation-ID") or str(uuid.uuid4())
         correlation_id_var.set(corr_id)
-        logger.info(f"Incoming request: {request.method} {request.url.path}")
+        ua = request.headers.get("User-Agent", "")
+        is_container_healthcheck = request.url.path in ("/health", "/api/health") and "Python-urllib" in ua
+        if is_container_healthcheck:
+            logger.debug(f"Incoming request: {request.method} {request.url.path}")
+        else:
+            logger.info(f"Incoming request: {request.method} {request.url.path}")
         response = await call_next(request)
         response.headers["X-Correlation-ID"] = corr_id
-        logger.info(f"Completed request: {request.method} {request.url.path} status={response.status_code}")
+        if is_container_healthcheck and response.status_code < 400:
+            logger.debug(f"Completed request: {request.method} {request.url.path} status={response.status_code}")
+        else:
+            logger.info(f"Completed request: {request.method} {request.url.path} status={response.status_code}")
         return response
 
     @app.exception_handler(HTTPException)
