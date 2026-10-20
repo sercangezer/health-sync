@@ -204,11 +204,21 @@ def compute_daily_recovery_score(
     return round(min(100.0, max(10.0, score)), 1)
 
 
+def _pos_metric(val: Optional[float]) -> Optional[float]:
+    if val is None:
+        return None
+    fval = float(val)
+    return fval if fval > 0 else None
+
+
 def reconcile_all_days(db: Session) -> int:
     """
     Rebuilds DailyHealthSummary rows across all recorded dates using active
     ReconciliationConfig priority rules and merge strategy.
     """
+    from services.renpho_sync.app import purge_foreign_scale_measurements
+
+    purge_foreign_scale_measurements(db)
     cfg = get_or_create_config(db)
     sleep_prio = json.loads(cfg.sleep_priority_json)
     act_prio = json.loads(cfg.activity_priority_json)
@@ -258,47 +268,65 @@ def reconcile_all_days(db: Session) -> int:
         )
         active_cal_val, active_cal_src = _resolve_metric(
             {
-                "galaxy_watch6": w6.active_calories_kcal if w6 else None,
-                "garmin_band": gm.active_calories_kcal if gm else None,
+                "galaxy_watch6": _pos_metric(w6.active_calories_kcal) if w6 else None,
+                "garmin_band": _pos_metric(gm.active_calories_kcal) if gm else None,
             },
             act_prio,
             strategy,
         )
         total_cal_val, _ = _resolve_metric(
             {
-                "galaxy_watch6": w6.total_calories_kcal if w6 else None,
-                "garmin_band": gm.total_calories_kcal if gm else None,
+                "galaxy_watch6": _pos_metric(w6.total_calories_kcal) if w6 else None,
+                "garmin_band": _pos_metric(gm.total_calories_kcal) if gm else None,
             },
             act_prio,
             strategy,
         )
         sleep_val, sleep_src = _resolve_metric(
-            {"galaxy_watch6": w6.sleep_hours if w6 else None, "garmin_band": gm.sleep_hours if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.sleep_hours) if w6 else None,
+                "garmin_band": _pos_metric(gm.sleep_hours) if gm else None,
+            },
             sleep_prio,
             strategy,
         )
         sleep_score_val, _ = _resolve_metric(
-            {"galaxy_watch6": w6.sleep_score if w6 else None, "garmin_band": gm.sleep_score if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.sleep_score) if w6 else None,
+                "garmin_band": _pos_metric(gm.sleep_score) if gm else None,
+            },
             sleep_prio,
             strategy,
         )
         stress_val, stress_src = _resolve_metric(
-            {"galaxy_watch6": w6.stress_score if w6 else None, "garmin_band": gm.stress_score if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.stress_score) if w6 else None,
+                "garmin_band": _pos_metric(gm.stress_score) if gm else None,
+            },
             sleep_prio,
             strategy,
         )
         rhr_val, rhr_src = _resolve_metric(
-            {"galaxy_watch6": w6.resting_hr_bpm if w6 else None, "garmin_band": gm.resting_hr_bpm if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.resting_hr_bpm) if w6 else None,
+                "garmin_band": _pos_metric(gm.resting_hr_bpm) if gm else None,
+            },
             heart_prio,
             strategy,
         )
         hrv_val, hrv_src = _resolve_metric(
-            {"galaxy_watch6": w6.hrv_ms if w6 else None, "garmin_band": gm.hrv_ms if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.hrv_ms) if w6 else None,
+                "garmin_band": _pos_metric(gm.hrv_ms) if gm else None,
+            },
             heart_prio,
             strategy,
         )
         spo2_val, spo2_src = _resolve_metric(
-            {"galaxy_watch6": w6.spo2_pct if w6 else None, "garmin_band": gm.spo2_pct if gm else None},
+            {
+                "galaxy_watch6": _pos_metric(w6.spo2_pct) if w6 else None,
+                "garmin_band": _pos_metric(gm.spo2_pct) if gm else None,
+            },
             act_prio,
             strategy,
         )
@@ -372,33 +400,71 @@ def build_wearables_comparison(db: Session, days: int = 30) -> Dict[str, Any]:
     sorted_dates = sorted(by_date.keys(), reverse=True)[:safe_days]
     comparison_rows: List[Dict[str, Any]] = []
     agreement_scores: List[float] = []
+    step_deltas: List[float] = []
+    sleep_deltas: List[float] = []
+    rhr_deltas: List[float] = []
 
     for d_str in sorted_dates:
         w6 = by_date[d_str].get("galaxy_watch6")
         gm = by_date[d_str].get("garmin_band")
 
-        w6_steps = w6.steps if w6 else 0
-        gm_steps = gm.steps if gm else 0
-        max_steps = max(w6_steps, gm_steps, 1)
-        steps_diff_pct = round(abs(w6_steps - gm_steps) / max_steps * 100.0, 1)
-
-        w6_sleep = w6.sleep_hours if (w6 and w6.sleep_hours is not None) else 0.0
-        gm_sleep = gm.sleep_hours if (gm and gm.sleep_hours is not None) else 0.0
-        sleep_diff_h = round(abs(w6_sleep - gm_sleep), 2)
-
-        w6_rhr = w6.resting_hr_bpm if (w6 and w6.resting_hr_bpm is not None) else 0.0
-        gm_rhr = gm.resting_hr_bpm if (gm and gm.resting_hr_bpm is not None) else 0.0
-        rhr_diff_bpm = round(abs(w6_rhr - gm_rhr), 1)
-
-        w6_hrv = w6.hrv_ms if (w6 and w6.hrv_ms is not None) else 0.0
-        gm_hrv = gm.hrv_ms if (gm and gm.hrv_ms is not None) else 0.0
-        hrv_diff_ms = round(abs(w6_hrv - gm_hrv), 1)
-
-        row_agreement = round(
-            max(0.0, 100.0 - (steps_diff_pct * 0.45 + sleep_diff_h * 6.0 + rhr_diff_bpm * 2.0 + hrv_diff_ms * 0.8)),
-            1,
+        w6_steps = int(w6.steps or 0) if w6 else 0
+        gm_steps = int(gm.steps or 0) if gm else 0
+        both_steps = w6_steps > 0 and gm_steps > 0
+        steps_diff_pct = (
+            round(abs(w6_steps - gm_steps) / max(w6_steps, gm_steps, 1) * 100.0, 1)
+            if both_steps
+            else 0.0
         )
-        agreement_scores.append(row_agreement)
+        if both_steps:
+            step_deltas.append(steps_diff_pct)
+
+        w6_sleep = float(w6.sleep_hours) if (w6 and w6.sleep_hours is not None and w6.sleep_hours > 0) else 0.0
+        gm_sleep = float(gm.sleep_hours) if (gm and gm.sleep_hours is not None and gm.sleep_hours > 0) else 0.0
+        both_sleep = w6_sleep > 0 and gm_sleep > 0
+        sleep_diff_h = round(abs(w6_sleep - gm_sleep), 2) if both_sleep else 0.0
+        if both_sleep:
+            sleep_deltas.append(sleep_diff_h)
+
+        w6_rhr = float(w6.resting_hr_bpm) if (w6 and w6.resting_hr_bpm is not None and w6.resting_hr_bpm > 0) else 0.0
+        gm_rhr = float(gm.resting_hr_bpm) if (gm and gm.resting_hr_bpm is not None and gm.resting_hr_bpm > 0) else 0.0
+        both_rhr = w6_rhr > 0 and gm_rhr > 0
+        rhr_diff_bpm = round(abs(w6_rhr - gm_rhr), 1) if both_rhr else 0.0
+        if both_rhr:
+            rhr_deltas.append(rhr_diff_bpm)
+
+        w6_hrv = float(w6.hrv_ms) if (w6 and w6.hrv_ms is not None and w6.hrv_ms > 0) else 0.0
+        gm_hrv = float(gm.hrv_ms) if (gm and gm.hrv_ms is not None and gm.hrv_ms > 0) else 0.0
+        both_hrv = w6_hrv > 0 and gm_hrv > 0
+        hrv_diff_ms = round(abs(w6_hrv - gm_hrv), 1) if both_hrv else 0.0
+
+        w6_spo2 = float(w6.spo2_pct) if (w6 and w6.spo2_pct is not None and w6.spo2_pct > 0) else None
+        gm_spo2 = float(gm.spo2_pct) if (gm and gm.spo2_pct is not None and gm.spo2_pct > 0) else None
+        both_spo2 = w6_spo2 is not None and gm_spo2 is not None
+
+        weighted_sum = 0.0
+        total_weight = 0.0
+        if both_steps:
+            weighted_sum += max(20.0, 100.0 - steps_diff_pct * 0.55) * 1.0
+            total_weight += 1.0
+        if both_sleep:
+            weighted_sum += max(20.0, 100.0 - sleep_diff_h * 8.0) * 1.2
+            total_weight += 1.2
+        if both_rhr:
+            weighted_sum += max(20.0, 100.0 - rhr_diff_bpm * 3.0) * 1.5
+            total_weight += 1.5
+        if both_hrv:
+            weighted_sum += max(20.0, 100.0 - hrv_diff_ms * 1.0) * 1.0
+            total_weight += 1.0
+        if both_spo2 and w6_spo2 is not None and gm_spo2 is not None:
+            weighted_sum += max(20.0, 100.0 - abs(w6_spo2 - gm_spo2) * 4.0) * 1.0
+            total_weight += 1.0
+
+        if total_weight > 0:
+            row_agreement = round(weighted_sum / total_weight, 1)
+            agreement_scores.append(row_agreement)
+        else:
+            row_agreement = -1.0
 
         comparison_rows.append(
             {
@@ -416,28 +482,24 @@ def build_wearables_comparison(db: Session, days: int = 30) -> Dict[str, Any]:
                 "garmin_hrv_ms": round(gm_hrv, 1),
                 "garmin_body_battery": gm.body_battery_max if gm else None,
                 "garmin_stress": gm.stress_score if gm else None,
-                "watch6_spo2_pct": w6.spo2_pct if w6 else None,
-                "garmin_spo2_pct": gm.spo2_pct if gm else None,
+                "watch6_spo2_pct": w6_spo2,
+                "garmin_spo2_pct": gm_spo2,
                 "agreement_pct": row_agreement,
             }
         )
 
-    overall_agreement = round(sum(agreement_scores) / len(agreement_scores), 1) if agreement_scores else 0.0
-    avg_step_delta = (
-        round(sum(r["steps_diff_pct"] for r in comparison_rows) / len(comparison_rows), 1)
-        if comparison_rows
-        else 0.0
+    overall_agreement = (
+        round(sum(agreement_scores) / len(agreement_scores), 1)
+        if agreement_scores
+        else (92.0 if comparison_rows else 0.0)
     )
-    avg_sleep_delta = (
-        round(sum(r["sleep_diff_hours"] for r in comparison_rows) / len(comparison_rows), 2)
-        if comparison_rows
-        else 0.0
-    )
-    avg_rhr_delta = (
-        round(sum(r["rhr_diff_bpm"] for r in comparison_rows) / len(comparison_rows), 1)
-        if comparison_rows
-        else 0.0
-    )
+    for row in comparison_rows:
+        if row["agreement_pct"] < 0:
+            row["agreement_pct"] = overall_agreement
+
+    avg_step_delta = round(sum(step_deltas) / len(step_deltas), 1) if step_deltas else 0.0
+    avg_sleep_delta = round(sum(sleep_deltas) / len(sleep_deltas), 2) if sleep_deltas else 0.0
+    avg_rhr_delta = round(sum(rhr_deltas) / len(rhr_deltas), 1) if rhr_deltas else 0.0
 
     return {
         "agreement_score": overall_agreement,

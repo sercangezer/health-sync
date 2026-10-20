@@ -168,6 +168,37 @@ def upsert_scale_measurement(
     return record
 
 
+def _get_reference_user_weight(db: Session) -> float:
+    prof = db.query(models.UserProfile).filter(models.UserProfile.id == 1).first()
+    start_w = float(prof.starting_weight_kg) if (prof and prof.starting_weight_kg) else 85.0
+    all_w = [float(r.weight_kg) for r in db.query(models.ScaleMeasurement).all() if r.weight_kg is not None]
+    near_w = sorted(w for w in all_w if abs(w - start_w) / max(start_w, 1.0) <= 0.25)
+    return near_w[len(near_w) // 2] if near_w else start_w
+
+
+def purge_foreign_scale_measurements(db: Session) -> int:
+    """
+    Removes foreign family-member / guest measurements whose weight deviates
+    by >22% from the primary user's weight profile.
+    """
+    ref_w = _get_reference_user_weight(db)
+    rows = db.query(models.ScaleMeasurement).all()
+    foreign_ids = [
+        r.id
+        for r in rows
+        if r.weight_kg is not None and abs(float(r.weight_kg) - ref_w) / max(ref_w, 1.0) > 0.22
+    ]
+    if not foreign_ids:
+        return 0
+    deleted = (
+        db.query(models.ScaleMeasurement)
+        .filter(models.ScaleMeasurement.id.in_(foreign_ids))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return int(deleted)
+
+
 def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
     """
     Synchronizes measurements from Renpho Cloud when RENPHO_EMAIL and RENPHO_PASSWORD
@@ -194,7 +225,9 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
         db.commit()
         return {"status": "waiting", "provider": "renpho", "records_processed": 0, "message": msg}
 
+    purge_foreign_scale_measurements(db)
     existing_total = db.query(models.ScaleMeasurement).count()
+    ref_w = _get_reference_user_weight(db)
     added = 0
     with _RENPHO_LOCK:
         try:
@@ -205,12 +238,12 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
             raw_items: List[Dict[str, Any]] = []
 
             def _fetch_items(c: Any) -> List[Dict[str, Any]]:
-                if existing_total >= 50 and getattr(c, "user_id", None) and hasattr(c, "measurement_table_for"):
+                if getattr(c, "user_id", None) and hasattr(c, "measurement_table_for"):
                     tbl = c.measurement_table_for(c.user_id)
                     if tbl:
-                        items = c.get_body_composition_measurements(tbl, c.user_id, page_size=50)
+                        items = c.get_body_composition_measurements(tbl, c.user_id, page_size=90)
                         if not items:
-                            items = c.get_measurements(tbl, c.user_id, total_count=50, page_size=50)
+                            items = c.get_measurements(tbl, c.user_id, total_count=90, page_size=90)
                         if items:
                             return items
                 return c.get_all_measurements()
@@ -232,7 +265,10 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
 
             for m in raw_items[:90]:
                 ts_epoch = m.get("timeStamp") or m.get("time_stamp") or m.get("timeary")
-                if not ts_epoch:
+                w_raw = m.get("weight")
+                if not ts_epoch or w_raw is None:
+                    continue
+                if abs(float(w_raw) - ref_w) / max(ref_w, 1.0) > 0.22:
                     continue
                 ts_val = int(ts_epoch)
                 if ts_val > 10**12:
@@ -243,7 +279,7 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
                     {
                         "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "source": "renpho_es26bb",
-                        "weight_kg": m.get("weight"),
+                        "weight_kg": w_raw,
                         "body_fat_pct": m.get("bodyfat"),
                         "muscle_mass_kg": m.get("sinew") or m.get("muscle"),
                         "bone_mass_kg": m.get("bone"),
@@ -337,6 +373,7 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
 
 
 def list_scale_records(db: Session, limit: int = 60) -> Dict[str, Any]:
+    purge_foreign_scale_measurements(db)
     safe_limit = max(1, min(365, int(limit)))
     rows = (
         db.query(models.ScaleMeasurement)

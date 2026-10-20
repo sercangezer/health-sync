@@ -581,3 +581,114 @@ def test_renpho_rate_limit_cooldown_and_watch6_single_log(monkeypatch):
     assert "geçici hız sınırında" in body["message"]
 
 
+def test_foreign_scale_filter_wearable_agreement_and_clinical_consistency():
+    from datetime import date, timedelta
+
+    rules = client.get("/api/reconciliation/rules").json()
+    rules["starting_weight_kg"] = 132.0
+    rules["target_weight_kg"] = 90.0
+    rules["height_cm"] = 186.0
+    rules["cycle_start_date"] = "2026-09-01"
+    rules["chronic_conditions"] = "İnsülin direnci"
+    rules["surgeries"] = "Safra kesesi ameliyatı, Bel fıtığı ameliyatı"
+    assert client.put("/api/reconciliation/rules", json=rules).status_code == 200
+
+    today = date.today()
+    d1 = (today - timedelta(days=3)).isoformat()
+    d2 = (today - timedelta(days=2)).isoformat()
+    d3 = today.isoformat()
+
+    # Primary user weigh-in on d1 (123.1 kg), followed 4 minutes later by a foreign family member (86.95 kg)
+    client.post(
+        "/api/ingest/ble-scale",
+        json={
+            "timestamp": f"{d1}T04:04:51Z",
+            "source": "renpho_es26bb",
+            "weight_kg": 123.1,
+            "body_fat_pct": 35.4,
+            "muscle_mass_kg": 75.58,
+            "water_pct": 45.2,
+            "visceral_fat": 16.0,
+        },
+    )
+    client.post(
+        "/api/ingest/ble-scale",
+        json={
+            "timestamp": f"{d1}T04:08:33Z",
+            "source": "renpho_es26bb",
+            "weight_kg": 86.95,
+            "body_fat_pct": 39.2,
+            "muscle_mass_kg": 49.7,
+            "water_pct": 42.1,
+            "visceral_fat": 15.0,
+        },
+    )
+    # Primary user weigh-in on d2 (120.6 kg, fat % dropped 35.4 -> 34.9, relative muscle ratio increased)
+    client.post(
+        "/api/ingest/ble-scale",
+        json={
+            "timestamp": f"{d2}T06:30:00Z",
+            "source": "renpho_es26bb",
+            "weight_kg": 120.6,
+            "body_fat_pct": 34.9,
+            "muscle_mass_kg": 74.53,
+            "water_pct": 45.6,
+            "visceral_fat": 16.0,
+        },
+    )
+
+    # Wearables on d2 (Watch6 lacks HRV, Garmin has HRV=90; RHR and SpO2 match closely)
+    client.post(
+        "/api/ingest/webhook",
+        json={
+            "device_source": "galaxy_watch6",
+            "records": [{"date": d2, "steps": 7200, "sleep_hours": 7.5, "resting_hr_bpm": 46.0, "spo2_pct": 93.0}],
+        },
+    )
+    client.post(
+        "/api/ingest/webhook",
+        json={
+            "device_source": "garmin_band",
+            "records": [
+                {
+                    "date": d2,
+                    "steps": 7500,
+                    "sleep_hours": 7.7,
+                    "resting_hr_bpm": 46.0,
+                    "hrv_ms": 90.0,
+                    "spo2_pct": 93.0,
+                }
+            ],
+        },
+    )
+    # Today (d3) morning wearable sync with only 1,055 steps so far
+    client.post(
+        "/api/ingest/webhook",
+        json={
+            "device_source": "garmin_band",
+            "records": [{"date": d3, "steps": 1055, "sleep_hours": 8.2, "resting_hr_bpm": 48.0, "hrv_ms": 82.0}],
+        },
+    )
+
+    # 1. Verify foreign 86.95 kg scale record was automatically purged
+    scale_items = client.get("/api/measurements/scale?limit=10").json()["items"]
+    weights = [r["weight_kg"] for r in scale_items]
+    assert 86.95 not in weights
+    assert 123.1 in weights and 120.6 in weights
+
+    # 2. Verify wearable agreement is high (>90%) even when Watch6 did not record HRV
+    comp = client.get("/api/wearables/comparison?days=14").json()
+    assert comp["agreement_score"] >= 90.0
+
+    # 3. Verify analytics insights: composition is nominal, no false muscle-loss or morning low-steps anomaly,
+    #    while visceral fat and low water alerts are still preserved on wearable-only today (d3)
+    ins = client.get("/api/analytics/insights?range=30d").json()
+    assert ins["composition_quality"]["status"] == "nominal"
+    anom_ids = [a["id"] for a in ins["anomalies"]]
+    assert not any(i.startswith("muscle-loss-") for i in anom_ids)
+    assert not any(i.startswith("low-steps-") for i in anom_ids)
+    assert any(i.startswith("visceral-insulin-") for i in anom_ids)
+    assert any(i.startswith("low-water-") for i in anom_ids)
+
+
+
