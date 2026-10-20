@@ -1,5 +1,9 @@
+import contextlib
+import io
 import os
+import threading
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
@@ -9,6 +13,10 @@ from services.common.logger import attach_standard_middleware_and_handlers
 
 app = FastAPI(title="Garmin Smart Band Sync Microservice", version="1.0.0")
 logger = attach_standard_middleware_and_handlers(app, "garmin-sync-service")
+
+_GARMIN_LOCK = threading.Lock()
+_GARMIN_TOKENSTORE_FILE = Path("/tmp/garmin_tokenstore.json")
+_GARMIN_TOKENSTORE_MEM: Dict[str, str] = {}
 
 
 def upsert_garmin_daily_records(
@@ -130,76 +138,96 @@ def sync_garmin_cloud(db: Session) -> Dict[str, Any]:
         return {"status": "waiting", "provider": "garmin", "records_processed": 0, "message": msg}
 
     synced = 0
-    try:
-        from garminconnect import Garmin  # type: ignore
+    with _GARMIN_LOCK:
+        try:
+            from garminconnect import Garmin  # type: ignore
 
-        api = Garmin(email, password)
-        api.login()
-        today = date.today()
-        batch: List[Dict[str, Any]] = []
-        for offset in range(14):
-            d_str = (today - timedelta(days=offset)).isoformat()
-            stats = api.get_stats(d_str) or {}
-            hr = api.get_heart_rates(d_str) or {}
-            sleep_full = api.get_sleep_data(d_str) or {}
-            sleep = sleep_full.get("dailySleepDTO") or {}
-            sleep_sec = float(sleep.get("sleepTimeSeconds") or 0)
-            total_steps = int(stats.get("totalSteps") or 0)
-            rhr = hr.get("restingHeartRate") or stats.get("restingHeartRate")
-            overnight_hrv = sleep_full.get("avgOvernightHrv") or sleep.get("avgOvernightHrv")
-            exercise_mins = int(stats.get("moderateIntensityMinutes") or 0) + int(
-                stats.get("vigorousIntensityMinutes") or 0
+            api = Garmin(email, password)
+            tokenstore_str = _GARMIN_TOKENSTORE_MEM.get(email)
+            if not tokenstore_str and _GARMIN_TOKENSTORE_FILE.exists():
+                try:
+                    tokenstore_str = _GARMIN_TOKENSTORE_FILE.read_text(encoding="utf-8").strip()
+                except Exception:
+                    tokenstore_str = None
+
+            capture_buf = io.StringIO()
+            with contextlib.redirect_stdout(capture_buf), contextlib.redirect_stderr(capture_buf):
+                api.login(tokenstore=tokenstore_str)
+
+            if hasattr(api, "client") and hasattr(api.client, "dumps"):
+                try:
+                    dumped = api.client.dumps()
+                    if dumped:
+                        _GARMIN_TOKENSTORE_MEM[email] = dumped
+                        _GARMIN_TOKENSTORE_FILE.write_text(dumped, encoding="utf-8")
+                except Exception:
+                    pass
+
+            today = date.today()
+            batch: List[Dict[str, Any]] = []
+            for offset in range(14):
+                d_str = (today - timedelta(days=offset)).isoformat()
+                stats = api.get_stats(d_str) or {}
+                hr = api.get_heart_rates(d_str) or {}
+                sleep_full = api.get_sleep_data(d_str) or {}
+                sleep = sleep_full.get("dailySleepDTO") or {}
+                sleep_sec = float(sleep.get("sleepTimeSeconds") or 0)
+                total_steps = int(stats.get("totalSteps") or 0)
+                rhr = hr.get("restingHeartRate") or stats.get("restingHeartRate")
+                overnight_hrv = sleep_full.get("avgOvernightHrv") or sleep.get("avgOvernightHrv")
+                exercise_mins = int(stats.get("moderateIntensityMinutes") or 0) + int(
+                    stats.get("vigorousIntensityMinutes") or 0
+                )
+                if total_steps <= 0 and sleep_sec <= 0 and rhr is None and overnight_hrv is None:
+                    continue
+                batch.append(
+                    {
+                        "date": d_str,
+                        "steps": total_steps,
+                        "active_calories_kcal": float(stats.get("activeKilocalories") or 0.0),
+                        "total_calories_kcal": float(stats.get("totalKilocalories") or 0.0),
+                        "resting_hr_bpm": rhr,
+                        "min_hr_bpm": hr.get("minHeartRate") or stats.get("minHeartRate"),
+                        "max_hr_bpm": hr.get("maxHeartRate") or stats.get("maxHeartRate"),
+                        "hrv_ms": round(float(overnight_hrv), 1) if overnight_hrv is not None else None,
+                        "sleep_hours": round(sleep_sec / 3600.0, 2) if sleep_sec > 0 else None,
+                        "deep_sleep_hours": round(float(sleep.get("deepSleepSeconds") or 0) / 3600.0, 2),
+                        "light_sleep_hours": round(float(sleep.get("lightSleepSeconds") or 0) / 3600.0, 2),
+                        "rem_sleep_hours": round(float(sleep.get("remSleepSeconds") or 0) / 3600.0, 2),
+                        "sleep_score": (sleep.get("sleepScores", {}).get("overall", {}) or {}).get("value"),
+                        "stress_score": stats.get("averageStressLevel"),
+                        "body_battery_max": stats.get("bodyBatteryHighestValue"),
+                        "body_battery_min": stats.get("bodyBatteryLowestValue"),
+                        "spo2_pct": stats.get("averageSpo2"),
+                        "exercise_minutes": exercise_mins,
+                    }
+                )
+            if batch:
+                synced = upsert_garmin_daily_records(db, batch, emit_log=False)
+        except Exception as exc:
+            logger.warning(f"Garmin Connect cloud sync failed: {exc}")
+            err_msg = f"Garmin Connect bağlantısı başarısız: {exc}"
+            db.add(
+                models.SyncLog(
+                    provider="garmin",
+                    status="degraded",
+                    records_processed=0,
+                    message=err_msg,
+                )
             )
-            if total_steps <= 0 and sleep_sec <= 0 and rhr is None and overnight_hrv is None:
-                continue
-            batch.append(
-                {
-                    "date": d_str,
-                    "steps": total_steps,
-                    "active_calories_kcal": float(stats.get("activeKilocalories") or 0.0),
-                    "total_calories_kcal": float(stats.get("totalKilocalories") or 0.0),
-                    "resting_hr_bpm": rhr,
-                    "min_hr_bpm": hr.get("minHeartRate") or stats.get("minHeartRate"),
-                    "max_hr_bpm": hr.get("maxHeartRate") or stats.get("maxHeartRate"),
-                    "hrv_ms": round(float(overnight_hrv), 1) if overnight_hrv is not None else None,
-                    "sleep_hours": round(sleep_sec / 3600.0, 2) if sleep_sec > 0 else None,
-                    "deep_sleep_hours": round(float(sleep.get("deepSleepSeconds") or 0) / 3600.0, 2),
-                    "light_sleep_hours": round(float(sleep.get("lightSleepSeconds") or 0) / 3600.0, 2),
-                    "rem_sleep_hours": round(float(sleep.get("remSleepSeconds") or 0) / 3600.0, 2),
-                    "sleep_score": (sleep.get("sleepScores", {}).get("overall", {}) or {}).get("value"),
-                    "stress_score": stats.get("averageStressLevel"),
-                    "body_battery_max": stats.get("bodyBatteryHighestValue"),
-                    "body_battery_min": stats.get("bodyBatteryLowestValue"),
-                    "spo2_pct": stats.get("averageSpo2"),
-                    "exercise_minutes": exercise_mins,
-                }
+            db.add(
+                models.WebhookHeartbeat(
+                    source="garmin_band",
+                    device_label="Garmin Smart Band (Connect Bridge)",
+                    event_type="cloud_sync",
+                    status="degraded",
+                    records_received=0,
+                    latency_ms=0.0,
+                    payload_summary=err_msg,
+                )
             )
-        if batch:
-            synced = upsert_garmin_daily_records(db, batch, emit_log=False)
-    except Exception as exc:
-        logger.warning(f"Garmin Connect cloud sync failed: {exc}")
-        err_msg = f"Garmin Connect bağlantısı başarısız: {exc}"
-        db.add(
-            models.SyncLog(
-                provider="garmin",
-                status="degraded",
-                records_processed=0,
-                message=err_msg,
-            )
-        )
-        db.add(
-            models.WebhookHeartbeat(
-                source="garmin_band",
-                device_label="Garmin Smart Band (Connect Bridge)",
-                event_type="cloud_sync",
-                status="degraded",
-                records_received=0,
-                latency_ms=0.0,
-                payload_summary=err_msg,
-            )
-        )
-        db.commit()
-        return {"status": "degraded", "provider": "garmin", "records_processed": 0, "message": err_msg}
+            db.commit()
+            return {"status": "degraded", "provider": "garmin", "records_processed": 0, "message": err_msg}
 
     msg = f"Garmin Smart Band bulut senkronizasyonu tamamlandı ({synced} günlük kayıt çekildi)."
     db.add(

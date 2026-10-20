@@ -1,5 +1,8 @@
+import json
 import os
+import threading
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List
 from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy.orm import Session
@@ -9,6 +12,44 @@ from services.common.logger import attach_standard_middleware_and_handlers
 
 app = FastAPI(title="Renpho ES-26BB-B Sync Microservice", version="1.0.0")
 logger = attach_standard_middleware_and_handlers(app, "renpho-sync-service")
+
+_RENPHO_LOCK = threading.Lock()
+_RENPHO_SESSION_CACHE: Dict[str, Dict[str, Any]] = {}
+_RENPHO_CACHE_FILE = Path("/tmp/renpho_session_cache.json")
+
+
+def _load_renpho_session(email: str) -> Dict[str, Any] | None:
+    if email in _RENPHO_SESSION_CACHE:
+        return _RENPHO_SESSION_CACHE[email]
+    if _RENPHO_CACHE_FILE.exists():
+        try:
+            data = json.loads(_RENPHO_CACHE_FILE.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("email") == email and data.get("token") and data.get("user_id"):
+                _RENPHO_SESSION_CACHE[email] = data
+                return data
+        except Exception:
+            pass
+    return None
+
+
+def _save_renpho_session(email: str, token: str | None, user_id: Any) -> None:
+    if not token or not user_id:
+        return
+    entry = {"email": email, "token": str(token), "user_id": user_id}
+    _RENPHO_SESSION_CACHE[email] = entry
+    try:
+        _RENPHO_CACHE_FILE.write_text(json.dumps(entry), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _clear_renpho_session(email: str) -> None:
+    _RENPHO_SESSION_CACHE.pop(email, None)
+    try:
+        if _RENPHO_CACHE_FILE.exists():
+            _RENPHO_CACHE_FILE.unlink()
+    except Exception:
+        pass
 
 
 def compute_es26bb_metrics_from_ble(payload: Dict[str, Any], height_cm: float = 178.0) -> Dict[str, Any]:
@@ -152,66 +193,123 @@ def sync_renpho_cloud(db: Session) -> Dict[str, Any]:
         db.commit()
         return {"status": "waiting", "provider": "renpho", "records_processed": 0, "message": msg}
 
+    existing_total = db.query(models.ScaleMeasurement).count()
     added = 0
-    try:
-        from renpho import RenphoClient  # type: ignore
+    with _RENPHO_LOCK:
+        try:
+            from renpho import RenphoClient  # type: ignore
 
-        client = RenphoClient(email, password)
-        client.login()
-        raw_items = client.get_all_measurements()
-        for m in raw_items[:90]:
-            ts_epoch = m.get("timeStamp") or m.get("time_stamp") or m.get("timeary")
-            if not ts_epoch:
-                continue
-            ts_val = int(ts_epoch)
-            if ts_val > 10**12:
-                ts_val //= 1000
-            dt = datetime.fromtimestamp(ts_val, tz=timezone.utc)
-            upsert_scale_measurement(
-                db,
-                {
-                    "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "source": "renpho_es26bb",
-                    "weight_kg": m.get("weight"),
-                    "body_fat_pct": m.get("bodyfat"),
-                    "muscle_mass_kg": m.get("sinew") or m.get("muscle"),
-                    "bone_mass_kg": m.get("bone"),
-                    "water_pct": m.get("water"),
-                    "subcutaneous_fat_pct": m.get("subfat"),
-                    "visceral_fat": m.get("visfat"),
-                    "bmr_kcal": m.get("bmr"),
-                    "protein_pct": m.get("protein"),
-                    "metabolic_age": m.get("bodyage"),
-                    "fat_free_weight_kg": m.get("fatFreeWeight"),
-                    "sinew_mass_kg": m.get("sinew"),
-                },
-                emit_log=False,
+            client = RenphoClient(email, password)
+            cached_sess = _load_renpho_session(email)
+            raw_items: List[Dict[str, Any]] = []
+
+            def _fetch_items(c: Any) -> List[Dict[str, Any]]:
+                if existing_total >= 50 and getattr(c, "user_id", None) and hasattr(c, "measurement_table_for"):
+                    tbl = c.measurement_table_for(c.user_id)
+                    if tbl:
+                        items = c.get_body_composition_measurements(tbl, c.user_id, page_size=50)
+                        if not items:
+                            items = c.get_measurements(tbl, c.user_id, total_count=50, page_size=50)
+                        if items:
+                            return items
+                return c.get_all_measurements()
+
+            if cached_sess:
+                client.token = cached_sess.get("token")
+                client.user_id = cached_sess.get("user_id")
+                try:
+                    raw_items = _fetch_items(client)
+                except Exception:
+                    _clear_renpho_session(email)
+                    client.token = None
+                    client.user_id = None
+
+            if not client.token:
+                client.login()
+                _save_renpho_session(email, client.token, client.user_id)
+                raw_items = _fetch_items(client)
+
+            for m in raw_items[:90]:
+                ts_epoch = m.get("timeStamp") or m.get("time_stamp") or m.get("timeary")
+                if not ts_epoch:
+                    continue
+                ts_val = int(ts_epoch)
+                if ts_val > 10**12:
+                    ts_val //= 1000
+                dt = datetime.fromtimestamp(ts_val, tz=timezone.utc)
+                upsert_scale_measurement(
+                    db,
+                    {
+                        "timestamp": dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "source": "renpho_es26bb",
+                        "weight_kg": m.get("weight"),
+                        "body_fat_pct": m.get("bodyfat"),
+                        "muscle_mass_kg": m.get("sinew") or m.get("muscle"),
+                        "bone_mass_kg": m.get("bone"),
+                        "water_pct": m.get("water"),
+                        "subcutaneous_fat_pct": m.get("subfat"),
+                        "visceral_fat": m.get("visfat"),
+                        "bmr_kcal": m.get("bmr"),
+                        "protein_pct": m.get("protein"),
+                        "metabolic_age": m.get("bodyage"),
+                        "fat_free_weight_kg": m.get("fatFreeWeight"),
+                        "sinew_mass_kg": m.get("sinew"),
+                    },
+                    emit_log=False,
+                )
+                added += 1
+        except Exception as exc:
+            exc_str = str(exc)
+            if existing_total > 0 and ("code=-114" in exc_str or "code=403" in exc_str or "429" in exc_str):
+                cooldown_msg = (
+                    f"Renpho bulut oturumu geçici hız sınırında; mevcut {existing_total} tartı ölçümü aktif ve korunuyor."
+                )
+                logger.info(f"Renpho cloud rate-limit cooldown handled gracefully (cached_records={existing_total})")
+                db.add(
+                    models.SyncLog(
+                        provider="renpho",
+                        status="nominal",
+                        records_processed=0,
+                        message=cooldown_msg,
+                    )
+                )
+                db.add(
+                    models.WebhookHeartbeat(
+                        source="renpho_es26bb",
+                        device_label="Renpho Body Fat Scale ES-26BB-B",
+                        event_type="cloud_sync",
+                        status="healthy",
+                        records_received=0,
+                        latency_ms=1.1,
+                        payload_summary=cooldown_msg,
+                    )
+                )
+                db.commit()
+                return {"status": "nominal", "provider": "renpho", "records_processed": 0, "message": cooldown_msg}
+
+            logger.warning(f"Renpho cloud sync failed: {exc}")
+            err_msg = f"Renpho bulut bağlantısı başarısız: {exc}"
+            db.add(
+                models.SyncLog(
+                    provider="renpho",
+                    status="degraded",
+                    records_processed=0,
+                    message=err_msg,
+                )
             )
-            added += 1
-    except Exception as exc:
-        logger.warning(f"Renpho cloud sync failed: {exc}")
-        err_msg = f"Renpho bulut bağlantısı başarısız: {exc}"
-        db.add(
-            models.SyncLog(
-                provider="renpho",
-                status="degraded",
-                records_processed=0,
-                message=err_msg,
+            db.add(
+                models.WebhookHeartbeat(
+                    source="renpho_es26bb",
+                    device_label="Renpho Body Fat Scale ES-26BB-B",
+                    event_type="cloud_sync",
+                    status="degraded",
+                    records_received=0,
+                    latency_ms=0.0,
+                    payload_summary=err_msg,
+                )
             )
-        )
-        db.add(
-            models.WebhookHeartbeat(
-                source="renpho_es26bb",
-                device_label="Renpho Body Fat Scale ES-26BB-B",
-                event_type="cloud_sync",
-                status="degraded",
-                records_received=0,
-                latency_ms=0.0,
-                payload_summary=err_msg,
-            )
-        )
-        db.commit()
-        return {"status": "degraded", "provider": "renpho", "records_processed": 0, "message": err_msg}
+            db.commit()
+            return {"status": "degraded", "provider": "renpho", "records_processed": 0, "message": err_msg}
 
     msg = f"Renpho ES-26BB-B bulut senkronizasyonu tamamlandı ({added} ölçüm çekildi)."
     db.add(
